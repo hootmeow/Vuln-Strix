@@ -1,0 +1,10 @@
+server:
+  port: 8080
+
+email:
+  enabled: true
+  imap_server: "imap.gmail.com"
+  imap_port: 993
+  username: "your-email@example.com"
+  password: "your-app-password"
+  poll_interval_seconds: 60

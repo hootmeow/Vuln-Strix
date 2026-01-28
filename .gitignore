@@ -1,0 +1,23 @@
+# Binaries
+*.exe
+*.dll
+*.so
+*.dylib
+vuln-strix
+
+# Secrets and Config
+config.yaml
+
+# Data
+*.db
+*.sqlite
+samples/
+tmp/
+
+# IDEs
+.vscode/
+.idea/
+
+# OS
+Thumbs.db
+.DS_Store

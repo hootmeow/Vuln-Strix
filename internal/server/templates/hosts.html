@@ -1,0 +1,27 @@
+{{define "content"}}
+<h2>Hosts</h2>
+<div class="table-responsive">
+    <table class="table table-striped table-sm">
+        <thead>
+            <tr>
+                <th>IP Address</th>
+                <th>Hostname</th>
+                <th>OS</th>
+                <th>Last Seen</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {{range .Hosts}}
+            <tr>
+                <td>{{.IP}}</td>
+                <td>{{.Hostname}}</td>
+                <td>{{.OS}}</td>
+                <td>{{.UpdatedAt.Format "2006-01-02 15:04"}}</td>
+                <td><a href="/hosts/{{.ID}}" class="btn btn-sm btn-outline-primary">View</a></td>
+            </tr>
+            {{end}}
+        </tbody>
+    </table>
+</div>
+{{end}}

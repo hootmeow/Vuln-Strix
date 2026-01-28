@@ -1,0 +1,40 @@
+{{define "content"}}
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2">Scan History</h1>
+</div>
+
+<div class="table-responsive">
+    <table class="table table-striped table-sm">
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Scan Date</th>
+                <th>Policy</th>
+                <th>Hosts</th>
+                <th>Stats (C/H/M/L)</th>
+            </tr>
+        </thead>
+        <tbody>
+            {{range .Scans}}
+            <tr>
+                <td>{{.Name}}</td>
+                <td>{{.ScanStart.Format "2006-01-02 15:04"}} - {{.ScanEnd.Format "15:04"}}</td>
+                <td>
+                    {{.PolicyName}}<br>
+                    <small class="text-muted">{{.PluginSet}}</small>
+                </td>
+                <!-- We don't have host count on Scan object directly yet, maybe add later or computed on ingest? 
+                     Using raw stats for now -->
+                <td>-</td> 
+                <td>
+                    <span class="badge bg-danger">{{.CriticalCount}}</span>
+                    <span class="badge bg-warning text-dark">{{.HighCount}}</span>
+                    <span class="badge bg-warning">{{.MediumCount}}</span>
+                    <span class="badge bg-info">{{.LowCount}}</span>
+                </td>
+            </tr>
+            {{end}}
+        </tbody>
+    </table>
+</div>
+{{end}}

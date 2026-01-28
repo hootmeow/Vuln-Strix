@@ -1,0 +1,25 @@
+{{define "content"}}
+<h2>Vulnerabilities Library</h2>
+<div class="table-responsive">
+    <table class="table table-striped table-sm">
+        <thead>
+            <tr>
+                <th>Severity</th>
+                <th>Plugin ID</th>
+                <th>Name</th>
+                <th>Family</th>
+            </tr>
+        </thead>
+        <tbody>
+            {{range .Vulns}}
+            <tr>
+                <td class="severity-{{.Severity}}">{{.Severity}}</td>
+                <td>{{.PluginID}}</td>
+                <td>{{.Name}}</td>
+                <td>{{.Family}}</td>
+            </tr>
+            {{end}}
+        </tbody>
+    </table>
+</div>
+{{end}}

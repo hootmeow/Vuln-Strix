@@ -1,0 +1,47 @@
+{{define "content"}}
+<h2>Dashboard Overview</h2>
+<div class="row mt-4">
+    <div class="col-md-3">
+        <div class="card text-white bg-danger mb-3">
+            <div class="card-header">Critical Vulnerabilities</div>
+            <div class="card-body">
+                <h1 class="card-title">{{.Stats.Critical}}</h1>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-white bg-warning mb-3">
+            <div class="card-header">High Vulnerabilities</div>
+            <div class="card-body">
+                <h1 class="card-title">{{.Stats.High}}</h1>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-white bg-info mb-3">
+            <div class="card-header">Total Hosts</div>
+            <div class="card-body">
+                <h1 class="card-title">{{.Stats.Hosts}}</h1>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-4">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">Upload Nessus Scan</div>
+            <div class="card-body">
+                <form action="/upload" method="post" enctype="multipart/form-data">
+                    <div class="mb-3">
+                        <label for="scanfile" class="form-label">Select .nessus file</label>
+                        <input class="form-control" type="file" id="scanfile" name="scanfile" accept=".nessus,.xml"
+                            required>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Upload & Ingest</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{{end}}
