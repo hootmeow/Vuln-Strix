@@ -384,3 +384,51 @@ func (s *SQLiteStore) ResetDB() error {
 
 	return nil
 }
+
+func (s *SQLiteStore) GetGhostHosts(days int) ([]models.Host, error) {
+	var hosts []models.Host
+	cutoff := time.Now().AddDate(0, 0, -days)
+	err := s.db.Where("updated_at < ?", cutoff).Find(&hosts).Error
+	return hosts, err
+}
+
+func (s *SQLiteStore) GetZombieFindings() ([]models.Finding, error) {
+	var findings []models.Finding
+	err := s.db.Preload("Vuln").Preload("Host").Where("reopen_count > 0 AND status = ?", "Open").Find(&findings).Error
+	return findings, err
+}
+
+func (s *SQLiteStore) GetAgingCohorts() (map[string]int64, error) {
+	cohorts := make(map[string]int64)
+
+	// Buckets: <30, 30-60, 60-90, 90+
+	var findings []models.Finding
+	if err := s.db.Where("status = ?", "Open").Find(&findings).Error; err != nil {
+		return nil, err
+	}
+
+	now := time.Now()
+	for _, f := range findings {
+		days := int(now.Sub(f.FirstSeen).Hours() / 24)
+		if days < 30 {
+			cohorts["Fresh (<30d)"]++
+		} else if days < 60 {
+			cohorts["Aging (30-60d)"]++
+		} else if days < 90 {
+			cohorts["Stale (60-90d)"]++
+		} else {
+			cohorts["Legacy (90d+)"]++
+		}
+	}
+	return cohorts, nil
+}
+
+func (s *SQLiteStore) GetCriticalFindings() ([]models.Finding, error) {
+	var findings []models.Finding
+	// Find findings where status is Open and associated Vuln severity is Critical
+	// We need to join.
+	// GORM Syntax: Joins("Vuln").Where("Vuln.severity = ?", "Critical") (if Vuln is association, explicit join might be needed for where clause if not using Preload with conditional)
+	// Safest GORM way for filtering on association:
+	err := s.db.Joins("Vuln").Preload("Host").Where("Vuln.severity = ? AND findings.status = ?", "Critical", "Open").Find(&findings).Error
+	return findings, err
+}

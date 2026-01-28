@@ -79,5 +79,7 @@ type Finding struct {
 	FirstSeen time.Time `json:"first_seen"`
 	LastSeen  time.Time `json:"last_seen"`
 
-	Status string `gorm:"size:50;index" json:"status"` // Open, Fixed, Risk Accepted
+	Status      string    `gorm:"size:50;index" json:"status"` // Open, Fixed, Risk Accepted
+	ReopenCount int       `gorm:"default:0" json:"reopen_count"`
+	FixedAt     time.Time `json:"fixed_at"`
 }

@@ -57,6 +57,10 @@ type Store interface {
 	GetAgingStats() (map[string]int, error)
 	GetMTTRStats() (map[string]float64, error)
 	GetSLACompliance() ([]models.Finding, error)
+	GetGhostHosts(days int) ([]models.Host, error)
+	GetZombieFindings() ([]models.Finding, error)
+	GetAgingCohorts() (map[string]int64, error)
+	GetCriticalFindings() ([]models.Finding, error)
 
 	// Admin
 	ResetDB() error

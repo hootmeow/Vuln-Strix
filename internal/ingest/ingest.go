@@ -167,8 +167,12 @@ func ProcessFile(store storage.Store, filePath string) error {
 			existing, err := store.FindFindingByFingerprint(fingerprint)
 			if err == nil && existing != nil {
 				// Update
+				if existing.Status == "Fixed" {
+					existing.ReopenCount++
+					log.Printf("Zombie detected: %s on %s", existing.Fingerprint, host.IP)
+				}
 				existing.LastSeen = scanTime
-				existing.Status = "Open" // Re-open if it was fixed
+				existing.Status = "Open"
 				if err := store.UpdateFinding(existing); err != nil {
 					log.Printf("Error updating finding %s: %v", fingerprint, err)
 				}

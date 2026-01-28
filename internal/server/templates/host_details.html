@@ -80,6 +80,12 @@
                 <canvas id="vulnChart"></canvas>
             </div>
         </div>
+        <div class="card mb-4">
+            <div class="card-header">Vulnerabilities (Fixed)</div>
+            <div class="card-body">
+                <canvas id="fixedVulnChart"></canvas>
+            </div>
+        </div>
     </div>
 </div>
 
@@ -304,11 +310,7 @@
                 datasets: [{
                     data: [stats.Critical, stats.High, stats.Medium, stats.Low, stats.Info],
                     backgroundColor: [
-                        '#dc3545', // Critical
-                        '#fd7e14', // High
-                        '#ffc107', // Medium
-                        '#0dcaf0', // Low
-                        '#6c757d'  // Info
+                        '#dc3545', '#fd7e14', '#ffc107', '#0dcaf0', '#6c757d'
                     ],
                     borderWidth: 1
                 }]
@@ -316,15 +318,51 @@
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
-                plugins: {
-                    legend: {
-                        position: 'right',
-                    }
-                }
+                plugins: { legend: { position: 'right' } }
             }
         });
+    }
+
+    // Fixed Chart Logic
+    let fixedStats = { Critical: 0, High: 0, Medium: 0, Low: 0, Info: 0 };
+    findings.forEach(f => {
+        if (f.status && f.status.toLowerCase() === "fixed") {
+            let sev = f.severity.charAt(0).toUpperCase() + f.severity.slice(1).toLowerCase();
+            if (fixedStats[sev] !== undefined) fixedStats[sev]++;
+        }
+    });
+
+    const ctxFixed = document.getElementById('fixedVulnChart');
+    if (ctxFixed && typeof Chart !== 'undefined') {
+        // Check if we have any fixed data
+        const totalFixed = Object.values(fixedStats).reduce((a, b) => a + b, 0);
+        if (totalFixed > 0) {
+            new Chart(ctxFixed, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Critical', 'High', 'Medium', 'Low', 'Info'],
+                    datasets: [{
+                        data: [fixedStats.Critical, fixedStats.High, fixedStats.Medium, fixedStats.Low, fixedStats.Info],
+                        backgroundColor: [
+                            '#dc3545', '#fd7e14', '#ffc107', '#0dcaf0', '#6c757d'
+                        ],
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'right' },
+                        title: { display: true, text: 'Remediated Vulnerabilities' }
+                    }
+                }
+            });
+        } else {
+            ctxFixed.parentElement.innerHTML = '<p class="text-center text-muted my-5">No fixed vulnerabilities yet. Keep patching!</p>';
+        }
     } else {
-        console.warn("Chart.js not loaded or canvas not found.");
+        console.warn("Chart.js not loaded or fixed canvas not found.");
     }
     });
 </script>
