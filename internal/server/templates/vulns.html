@@ -1,25 +1,114 @@
 {{define "content"}}
 <h2>Vulnerabilities Library</h2>
+<div class="row mb-3">
+    <div class="col-md-6">
+        <input type="text" id="vulnSearch" class="form-control" placeholder="Search by Name, Family, or Plugin ID..."
+            onkeyup="filterVulns()">
+    </div>
+</div>
+
 <div class="table-responsive">
-    <table class="table table-striped table-sm">
+    <table class="table table-striped table-sm" id="vulnsTable">
         <thead>
             <tr>
-                <th>Severity</th>
-                <th>Plugin ID</th>
-                <th>Name</th>
-                <th>Family</th>
+                <th style="cursor: pointer;" onclick="sortVulns(0)">Severity <span
+                        data-feather="arrow-down-circle"></span></th>
+                <th style="cursor: pointer;" onclick="sortVulns(1)">Plugin ID</th>
+                <th style="cursor: pointer;" onclick="sortVulns(2)">Name</th>
+                <th style="cursor: pointer;" onclick="sortVulns(3)">Family</th>
+                <th style="cursor: pointer;" onclick="sortVulns(4)">Host Count</th>
             </tr>
         </thead>
         <tbody>
             {{range .Vulns}}
             <tr>
-                <td class="severity-{{.Severity}}">{{.Severity}}</td>
-                <td>{{.PluginID}}</td>
+                <td><span class="badge severity-{{.Severity}}">{{.Severity}}</span></td>
+                <td><a href="https://www.tenable.com/plugins/nessus/{{.PluginID}}" target="_blank">{{.PluginID}}</a>
+                </td>
                 <td>{{.Name}}</td>
                 <td>{{.Family}}</td>
+                <td>{{.HostCount}}</td>
             </tr>
             {{end}}
         </tbody>
     </table>
 </div>
+{{end}}
+
+{{define "scripts"}}
+<script>
+    function filterVulns() {
+        var input, filter, table, tr, td, i, txtValue;
+        input = document.getElementById("vulnSearch");
+        filter = input.value.toUpperCase();
+        table = document.getElementById("vulnsTable");
+        tr = table.getElementsByTagName("tr");
+        for (i = 1; i < tr.length; i++) {
+            var found = false;
+            // Check Plugin ID (1), Name (2), Family (3)
+            for (var j = 1; j <= 3; j++) {
+                td = tr[i].getElementsByTagName("td")[j];
+                if (td) {
+                    txtValue = td.textContent || td.innerText;
+                    if (txtValue.toUpperCase().indexOf(filter) > -1) {
+                        found = true;
+                        break;
+                    }
+                }
+            }
+            if (found) {
+                tr[i].style.display = "";
+            } else {
+                tr[i].style.display = "none";
+            }
+        }
+    }
+
+    function sortVulns(n) {
+        var table, rows, switching, i, x, y, shouldSwitch, dir, switchcount = 0;
+        table = document.getElementById("vulnsTable");
+        switching = true;
+        dir = "asc";
+        while (switching) {
+            switching = false;
+            rows = table.rows;
+            for (i = 1; i < (rows.length - 1); i++) {
+                shouldSwitch = false;
+                x = rows[i].getElementsByTagName("TD")[n];
+                y = rows[i + 1].getElementsByTagName("TD")[n];
+
+                var xContent = x.textContent || x.innerText;
+                var yContent = y.textContent || y.innerText;
+
+                // Handle numeric sorting for Host Count (index 4)
+                if (n === 4) {
+                    xContent = parseInt(xContent);
+                    yContent = parseInt(yContent);
+                }
+
+                if (dir == "asc") {
+                    if (xContent > yContent) {
+                        shouldSwitch = true;
+                        break;
+                    }
+                } else if (dir == "desc") {
+                    if (xContent < yContent) {
+                        shouldSwitch = true;
+                        break;
+                    }
+                }
+            }
+            if (shouldSwitch) {
+                rows[i].parentNode.insertBefore(rows[i + 1], rows[i]);
+                switching = true;
+                switchcount++;
+            } else {
+                if (switchcount == 0 && dir == "asc") {
+                    dir = "desc";
+                    switching = true;
+                }
+            }
+        }
+    }
+</script>
 {{end}}

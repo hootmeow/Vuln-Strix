@@ -13,9 +13,10 @@ type Host struct {
 	UpdatedAt time.Time      `json:"updated_at"`
 	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
 
-	IP       string `gorm:"uniqueIndex;size:50" json:"ip"` // Support IPv6
-	Hostname string `gorm:"size:255" json:"hostname"`
-	OS       string `gorm:"size:255" json:"os"`
+	IP          string `gorm:"uniqueIndex;size:50" json:"ip"` // Support IPv6
+	Hostname    string `gorm:"size:255" json:"hostname"`
+	OS          string `gorm:"size:255" json:"os"`
+	Criticality string `gorm:"size:20;default:'Medium'" json:"criticality"` // High, Medium, Low
 
 	Scans []Scan `gorm:"many2many:host_scans;" json:"scans,omitempty"`
 }
@@ -50,8 +51,10 @@ type Vulnerability struct {
 	PluginID    string `gorm:"uniqueIndex;size:100" json:"plugin_id"` // String to support potential non-numeric IDs from other scanners later
 	Name        string `gorm:"size:255" json:"name"`
 	Description string `gorm:"type:text" json:"description"`
+	Solution    string `gorm:"type:text" json:"solution"`
 	Severity    string `gorm:"size:50" json:"severity"` // Critical, High, Medium, Low, Info
 	Family      string `gorm:"size:100" json:"family"`
+	HostCount   int    `gorm:"-" json:"host_count"` // Not persisted, calculated on demand
 }
 
 // Finding represents the state of a vulnerability on a specific host.

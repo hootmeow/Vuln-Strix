@@ -102,9 +102,10 @@ func ProcessFile(store storage.Store, filePath string) error {
 		}
 
 		host := &models.Host{
-			IP:       ip,
-			Hostname: rh.HostProperties.Get("host-fqdn"),
-			OS:       rh.HostProperties.Get("operating-system"),
+			IP:          ip,
+			Hostname:    rh.HostProperties.Get("host-fqdn"),
+			OS:          rh.HostProperties.Get("operating-system"),
+			Criticality: "Medium", // Default for new assets
 		}
 
 		if err := store.UpsertHost(host); err != nil {
@@ -139,6 +140,7 @@ func ProcessFile(store storage.Store, filePath string) error {
 				PluginID:    item.PluginID,
 				Name:        item.PluginName,
 				Description: item.Description,
+				Solution:    item.Solution,
 				Severity:    sev,
 				Family:      item.PluginFamily,
 			}

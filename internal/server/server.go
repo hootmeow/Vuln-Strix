@@ -11,6 +11,7 @@ import (
 
 	"github.com/hootmeow/Vuln-Strix/internal/ingest"
 	"github.com/hootmeow/Vuln-Strix/internal/models"
+	"github.com/hootmeow/Vuln-Strix/internal/sampledata"
 	"github.com/hootmeow/Vuln-Strix/internal/storage"
 )
 
@@ -28,10 +29,23 @@ func Start(store storage.Store, port int) error {
 
 	// Load base template once
 	var err error
-	s.tmpl, err = template.ParseGlob("internal/server/templates/base.html")
+	funcMap := template.FuncMap{
+		"sub": func(a, b int) int {
+			return a - b
+		},
+	}
+
+	// We must parse the base template with the FuncMap attached.
+	// However, ParseGlob creates a new template. We need New().Funcs().ParseGlob()
+	s.tmpl = template.New("").Funcs(funcMap)
+
+	// Try standard path
+	basePath := "internal/server/templates/base.html"
+	_, err = s.tmpl.ParseGlob(basePath)
 	if err != nil {
-		// Fallback
-		s.tmpl, err = template.ParseGlob("../../internal/server/templates/base.html")
+		// Fallback path
+		basePath = "../../internal/server/templates/base.html"
+		_, err = s.tmpl.ParseGlob(basePath)
 		if err != nil {
 			return fmt.Errorf("could not load base template: %w", err)
 		}
@@ -45,6 +59,11 @@ func Start(store storage.Store, port int) error {
 	mux.HandleFunc("GET /vulns", s.handleVulns)
 	mux.HandleFunc("GET /scans", s.handleScans)
 	mux.HandleFunc("POST /upload", s.handleUpload)
+	mux.HandleFunc("GET /admin", s.handleAdmin)
+	mux.HandleFunc("POST /admin/reset", s.handleResetDB)
+	mux.HandleFunc("POST /admin/generate", s.handleGenerateData)
+	mux.HandleFunc("POST /admin/settings", s.handleSettings)
+	mux.HandleFunc("GET /reports", s.handleReports)
 
 	log.Printf("Starting server on port %d...", port)
 	return http.ListenAndServe(fmt.Sprintf(":%d", port), mux)
@@ -100,12 +119,19 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	high, _ := s.store.GetVulnCount("High")
 	totalHosts, _ := s.store.GetHostCount()
 
+	// Fetch scans for trend chart
+	scans, err := s.store.GetScans()
+	if err != nil {
+		log.Printf("Failed to fetch scans for dashboard: %v", err)
+	}
+
 	data := struct {
 		Stats struct {
 			Critical int64
 			High     int64
 			Hosts    int64
 		}
+		Scans []models.Scan
 	}{
 		Stats: struct {
 			Critical int64
@@ -116,6 +142,7 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 			High:     high,
 			Hosts:    totalHosts,
 		},
+		Scans: scans,
 	}
 
 	s.render(w, "dashboard.html", data)
@@ -234,4 +261,123 @@ func (s *Server) render(w http.ResponseWriter, pageName string, data interface{}
 		log.Printf("Template execution error: %v", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 	}
+}
+
+func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
+	sla := s.store.GetSLAConfig()
+	data := struct {
+		SLA map[string]int
+	}{
+		SLA: sla,
+	}
+	s.render(w, "admin.html", data)
+}
+
+func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Invalid form data", http.StatusBadRequest)
+		return
+	}
+
+	for _, sev := range []string{"Critical", "High", "Medium", "Low"} {
+		key := "sla_" + sev
+		val := r.FormValue(key)
+		if val != "" {
+			if err := s.store.UpdateSetting(key, val); err != nil {
+				log.Printf("Failed to update setting %s: %v", key, err)
+			}
+		}
+	}
+
+	http.Redirect(w, r, "/admin?status=settings_saved", http.StatusSeeOther)
+}
+
+func (s *Server) handleResetDB(w http.ResponseWriter, r *http.Request) {
+	if err := s.store.ResetDB(); err != nil {
+		log.Printf("Failed to reset DB: %v", err)
+		http.Error(w, "Failed to reset database", http.StatusInternalServerError)
+		return
+	}
+
+	// Re-run migrations to recreate tables
+	if err := s.store.AutoMigrate(); err != nil {
+		log.Printf("Failed to migrate after reset: %v", err)
+		http.Error(w, "Failed to migrate database", http.StatusInternalServerError)
+		return
+	}
+
+	http.Redirect(w, r, "/admin?status=reset_success", http.StatusSeeOther)
+}
+
+func (s *Server) handleGenerateData(w http.ResponseWriter, r *http.Request) {
+	// Generate data to "samples" dir
+	sampleDir := "samples"
+	if err := sampledata.Generate(sampleDir); err != nil {
+		log.Printf("Failed to generate sample data: %v", err)
+		http.Error(w, "Failed to generate data", http.StatusInternalServerError)
+		return
+	}
+
+	// Ingest files
+	files, err := filepath.Glob(filepath.Join(sampleDir, "*.nessus"))
+	if err != nil {
+		log.Printf("Failed to glob sample files: %v", err)
+		http.Error(w, "Failed to find sample files", http.StatusInternalServerError)
+		return
+	}
+
+	for _, f := range files {
+		if err := ingest.ProcessFile(s.store, f); err != nil {
+			log.Printf("Failed to ingest sample file %s: %v", f, err)
+			// Continue with others
+		}
+	}
+
+	http.Redirect(w, r, "/admin?status=generate_success", http.StatusSeeOther)
+}
+
+func (s *Server) handleReports(w http.ResponseWriter, r *http.Request) {
+	// For advanced reporting, we want to calculate:
+	// 1. Total findings over time (already on dashboard, but maybe more granular)
+	// 2. Scan Delta: Comparing the last two scans globally
+
+	scans, err := s.store.GetScans()
+	if err != nil || len(scans) < 2 {
+		data := struct {
+			CanCompare bool
+			Message    string
+		}{
+			CanCompare: false,
+			Message:    "At least two scans are required for comparison reports.",
+		}
+		s.render(w, "reports.html", data)
+		return
+	}
+
+	// Simple Delta calculation between latest and previous
+	latest := scans[0]
+	prev := scans[1]
+
+	aging, _ := s.store.GetAgingStats()
+	mttr, _ := s.store.GetMTTRStats()
+	slaBreaches, _ := s.store.GetSLACompliance()
+
+	data := struct {
+		CanCompare  bool
+		Latest      models.Scan
+		Previous    models.Scan
+		Aging       map[string]int
+		MTTR        map[string]float64
+		SLABreaches []models.Finding
+		Message     string
+	}{
+		CanCompare:  true,
+		Latest:      latest,
+		Previous:    prev,
+		Aging:       aging,
+		MTTR:        mttr,
+		SLABreaches: slaBreaches,
+	}
+
+	s.render(w, "reports.html", data)
 }

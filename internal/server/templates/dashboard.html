@@ -1,47 +1,115 @@
 {{define "content"}}
-<h2>Dashboard Overview</h2>
-<div class="row mt-4">
-    <div class="col-md-3">
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2">Dashboard</h1>
+</div>
+
+<div class="row">
+    <div class="col-md-4">
         <div class="card text-white bg-danger mb-3">
             <div class="card-header">Critical Vulnerabilities</div>
             <div class="card-body">
-                <h1 class="card-title">{{.Stats.Critical}}</h1>
+                <h5 class="card-title display-4">{{.Stats.Critical}}</h5>
             </div>
         </div>
     </div>
-    <div class="col-md-3">
+    <div class="col-md-4">
         <div class="card text-white bg-warning mb-3">
             <div class="card-header">High Vulnerabilities</div>
             <div class="card-body">
-                <h1 class="card-title">{{.Stats.High}}</h1>
+                <h5 class="card-title display-4">{{.Stats.High}}</h5>
             </div>
         </div>
     </div>
-    <div class="col-md-3">
-        <div class="card text-white bg-info mb-3">
+    <div class="col-md-4">
+        <div class="card text-white bg-primary mb-3">
             <div class="card-header">Total Hosts</div>
             <div class="card-body">
-                <h1 class="card-title">{{.Stats.Hosts}}</h1>
+                <h5 class="card-title display-4">{{.Stats.Hosts}}</h5>
             </div>
         </div>
     </div>
 </div>
 
 <div class="row mt-4">
-    <div class="col-md-6">
+    <div class="col-12">
         <div class="card">
-            <div class="card-header">Upload Nessus Scan</div>
+            <div class="card-header">
+                Vulnerability Trends (Last 6 Months)
+            </div>
+            <div class="card-body">
+                <canvas id="trendChart" height="100"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                Upload Scan (.nessus)
+            </div>
             <div class="card-body">
                 <form action="/upload" method="post" enctype="multipart/form-data">
                     <div class="mb-3">
-                        <label for="scanfile" class="form-label">Select .nessus file</label>
-                        <input class="form-control" type="file" id="scanfile" name="scanfile" accept=".nessus,.xml"
-                            required>
+                        <label for="scanfile" class="form-label">Nessus XML File</label>
+                        <input class="form-control" type="file" id="scanfile" name="scanfile" required>
                     </div>
-                    <button type="submit" class="btn btn-primary">Upload & Ingest</button>
+                    <button type="submit" class="btn btn-success">Upload & Ingest</button>
                 </form>
             </div>
         </div>
     </div>
 </div>
+
+<script>
+    document.addEventListener("DOMContentLoaded", function () {
+        // Parse Scan Data from Go Template
+        const scans = [
+            {{ range .Scans }}
+            {
+            date: "{{.ScanStart.Format "2006-01-02"}}",
+            count: {{.CriticalCount }} + {{.HighCount }} + {{.MediumCount }} + {{.LowCount }}
+            },
+        {{ end }}
+        ];
+
+    // Sort by date (if not already)
+    scans.sort((a, b) => new Date(a.date) - new Date(b.date));
+
+    const labels = scans.map(s => s.date);
+    const data = scans.map(s => s.count);
+
+    const ctx = document.getElementById('trendChart');
+    if (ctx) {
+        new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Total Vulnerabilities',
+                    data: data,
+                    borderColor: '#0d6efd',
+                    backgroundColor: 'rgba(13, 110, 253, 0.1)',
+                    fill: true,
+                    tension: 0.3
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    legend: {
+                        display: true
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true
+                    }
+                }
+            }
+        });
+    }
+    });
+</script>
 {{end}}

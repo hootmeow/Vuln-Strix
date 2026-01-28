@@ -52,4 +52,15 @@ type Store interface {
 	AddHostToScan(hostID, scanID uint) error
 	GetScans() ([]models.Scan, error)
 	GetScan(id uint) (*models.Scan, error)
+
+	// Analytics
+	GetAgingStats() (map[string]int, error)
+	GetMTTRStats() (map[string]float64, error)
+	GetSLACompliance() ([]models.Finding, error)
+
+	// Admin
+	ResetDB() error
+	GetSettings() (map[string]string, error)
+	UpdateSetting(key, value string) error
+	GetSLAConfig() map[string]int
 }

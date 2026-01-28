@@ -1,0 +1,103 @@
+{{define "content"}}
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2">Admin Panel</h1>
+</div>
+
+<div class="row">
+    <div class="col-md-6">
+        <div class="card mb-4 border-danger">
+            <div class="card-header bg-danger text-white">Danger Zone: Reset Database</div>
+            <div class="card-body">
+                <p class="card-text">This will <strong class="text-danger">DELETE ALL DATA</strong> (Hosts, Scans,
+                    Vulnerabilities). This action cannot be undone.</p>
+                <form action="/admin/reset" method="post"
+                    onsubmit="return confirm('Are you sure you want to WIPE ALL DATA?');">
+                    <button type="submit" class="btn btn-danger">Reset Database</button>
+                </form>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card mb-4 border-primary">
+            <div class="card-header bg-primary text-white">Generate Sample Data</div>
+            <div class="card-body">
+                <p class="card-text">Generate mock scans and ingest them into the system. Useful for testing and demos.
+                </p>
+                <form action="/admin/generate" method="post">
+                    <button type="submit" class="btn btn-primary">Generate & Ingest Samples</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+<div class="row">
+    <div class="col-md-12">
+        <div class="card mb-4 border-info">
+            <div class="card-header bg-info text-white">SLA Configuration (Days)</div>
+            <div class="card-body">
+                <form action="/admin/settings" method="post">
+                    <div class="row g-3 align-items-center">
+                        <div class="col-auto">
+                            <label for="sla_Critical" class="col-form-label fw-bold text-danger">Critical:</label>
+                        </div>
+                        <div class="col-auto">
+                            <input type="number" id="sla_Critical" name="sla_Critical" class="form-control"
+                                style="width: 80px;" value="{{if .SLA.Critical}}{{.SLA.Critical}}{{else}}7{{end}}">
+                        </div>
+
+                        <div class="col-auto">
+                            <label for="sla_High" class="col-form-label fw-bold text-warning">High:</label>
+                        </div>
+                        <div class="col-auto">
+                            <input type="number" id="sla_High" name="sla_High" class="form-control" style="width: 80px;"
+                                value="{{if .SLA.High}}{{.SLA.High}}{{else}}14{{end}}">
+                        </div>
+
+                        <div class="col-auto">
+                            <label for="sla_Medium" class="col-form-label fw-bold text-info">Medium:</label>
+                        </div>
+                        <div class="col-auto">
+                            <input type="number" id="sla_Medium" name="sla_Medium" class="form-control"
+                                style="width: 80px;" value="{{if .SLA.Medium}}{{.SLA.Medium}}{{else}}30{{end}}">
+                        </div>
+
+                        <div class="col-auto">
+                            <label for="sla_Low" class="col-form-label fw-bold text-primary">Low:</label>
+                        </div>
+                        <div class="col-auto">
+                            <input type="number" id="sla_Low" name="sla_Low" class="form-control" style="width: 80px;"
+                                value="{{if .SLA.Low}}{{.SLA.Low}}{{else}}60{{end}}">
+                        </div>
+
+                        <div class="col-auto">
+                            <button type="submit" class="btn btn-info text-white">Save Settings</button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-12">
+        <div class="alert alert-info" role="alert">
+            <h4 class="alert-heading">Application Info</h4>
+            <p>Vuln-Strix v0.1.0-alpha</p>
+            <hr>
+            <p class="mb-0">Running on localhost:8080</p>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Check for status query param to show alerts
+    const urlParams = new URLSearchParams(window.location.search);
+    const status = urlParams.get('status');
+    if (status === 'reset_success') {
+        alert('Database has been reset successfully.');
+    } else if (status === 'generate_success') {
+        alert('Sample data has been generated and ingested successfully.');
+    }
+</script>
+{{end}}

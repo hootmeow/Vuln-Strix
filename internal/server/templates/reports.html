@@ -1,0 +1,138 @@
+{{define "content"}}
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2">Advanced Security Reports</h1>
+</div>
+
+{{if not .CanCompare}}
+<div class="alert alert-warning">
+    {{.Message}}
+</div>
+{{else}}
+<div class="row">
+    <!-- Vulnerability Aging -->
+    <div class="col-md-6">
+        <div class="card mb-4 shadow-sm border-start border-info border-4">
+            <div class="card-header bg-white fw-bold">Vulnerability Aging Breakdown</div>
+            <div class="card-body">
+                <p class="text-muted small">Distribution of open vulnerabilities by their age since discovery.</p>
+                <div class="list-group list-group-flush">
+                    {{range $bucket, $count := .Aging}}
+                    <div class="list-group-item d-flex justify-content-between align-items-center">
+                        {{$bucket}}
+                        <span class="badge {{if eq $bucket " 91+ Days"}}bg-danger{{else if eq $bucket "61-90 Days"
+                            }}bg-warning text-dark{{else}}bg-secondary{{end}} rounded-pill">{{$count}}</span>
+                    </div>
+                    {{end}}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Remediation Performance (MTTR) -->
+    <div class="col-md-6">
+        <div class="card mb-4 shadow-sm border-start border-success border-4">
+            <div class="card-header bg-white fw-bold">Remediation Performance (MTTR)</div>
+            <div class="card-body">
+                <p class="text-muted small">Average days to fix vulnerabilities (discovery to resolution).</p>
+                <table class="table table-sm mt-2">
+                    <thead>
+                        <tr>
+                            <th>Severity</th>
+                            <th>Avg. Days to Fix</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {{range $sev, $days := .MTTR}}
+                        <tr>
+                            <td><span class="badge severity-{{$sev}}">{{$sev}}</span></td>
+                            <td class="fw-bold">{{printf "%.1f" $days}} days</td>
+                        </tr>
+                        {{end}}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <!-- SLA Compliance -->
+    <div class="col-12">
+        <div class="card mb-4 shadow-sm border-start border-danger border-4">
+            <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                <span class="fw-bold text-danger">SLA Compliance Tracking</span>
+                <span class="badge bg-danger">{{len .SLABreaches}} Items Outside SLA</span>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Host</th>
+                                <th>Vulnerability</th>
+                                <th>Severity</th>
+                                <th>First Seen</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {{range .SLABreaches}}
+                            <tr>
+                                <td>{{.Host.IP}}</td>
+                                <td>{{.Vuln.Name}}</td>
+                                <td><span class="badge severity-{{.Vuln.Severity}}">{{.Vuln.Severity}}</span></td>
+                                <td>{{.FirstSeen.Format "2006-01-02"}}</td>
+                                <td><span class="badge bg-danger">STALE</span></td>
+                            </tr>
+                            {{else}}
+                            <tr>
+                                <td colspan="5" class="text-center py-4 text-muted italic">All vulnerabilities are
+                                    currently within SLA windows.</td>
+                            </tr>
+                            {{end}}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <!-- Global Scan Delta -->
+    <div class="col-md-12">
+        <div class="card mb-4 shadow-sm">
+            <div class="card-header bg-dark text-white fw-bold">Global Scan Delta</div>
+            <div class="card-body">
+                <div class="row text-center">
+                    <div class="col-md-3 border-end">
+                        <small class="text-muted d-block uppercase small">Latest Scan</small>
+                        <h4 class="mb-0">{{.Latest.Name}}</h4>
+                    </div>
+                    <div class="col-md-3 border-end">
+                        <small class="text-muted d-block uppercase small">Critical Change</small>
+                        {{$diff := sub .Latest.CriticalCount .Previous.CriticalCount}}
+                        <h4
+                            class="{{if gt $diff 0}}text-danger{{else if lt $diff 0}}text-success{{else}}text-muted{{end}} mb-0">
+                            {{if gt $diff 0}}+{{end}}{{$diff}}
+                        </h4>
+                    </div>
+                    <div class="col-md-3 border-end">
+                        <small class="text-muted d-block uppercase small">High Change</small>
+                        {{$diffH := sub .Latest.HighCount .Previous.HighCount}}
+                        <h4
+                            class="{{if gt $diffH 0}}text-danger{{else if lt $diffH 0}}text-success{{else}}text-muted{{end}} mb-0">
+                            {{if gt $diffH 0}}+{{end}}{{$diffH}}
+                        </h4>
+                    </div>
+                    <div class="col-md-3">
+                        <small class="text-muted d-block uppercase small">Previous Scan</small>
+                        <h4 class="mb-0">{{.Previous.Name}}</h4>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{{end}}
+{{end}}
