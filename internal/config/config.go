@@ -16,12 +16,16 @@ type ServerConfig struct {
 }
 
 type EmailConfig struct {
-	Enabled      bool   `yaml:"enabled"`
-	IMAPServer   string `yaml:"imap_server"`
-	IMAPPort     int    `yaml:"imap_port"`
-	Username     string `yaml:"username"`
-	Password     string `yaml:"password"`
-	PollInterval int    `yaml:"poll_interval_seconds"` // Seconds
+	Enabled      bool     `yaml:"enabled"`
+	IMAPServer   string   `yaml:"imap_server"`
+	IMAPPort     int      `yaml:"imap_port"`
+	SMTPServer   string   `yaml:"smtp_server"`
+	SMTPPort     int      `yaml:"smtp_port"`
+	Username     string   `yaml:"username"`
+	Password     string   `yaml:"password"`
+	FromAddr     string   `yaml:"from_addr"`
+	ToAddr       []string `yaml:"to_addr"`
+	PollInterval int      `yaml:"poll_interval_seconds"` // Seconds
 }
 
 // LoadConfig reads the configuration from the given path.

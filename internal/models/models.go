@@ -18,6 +18,7 @@ type Host struct {
 	OS          string `gorm:"size:255" json:"os"`
 	Criticality string `gorm:"size:20;default:'Medium'" json:"criticality"` // High, Medium, Low
 
+	Tags  []Tag  `gorm:"many2many:host_tags;" json:"tags"`
 	Scans []Scan `gorm:"many2many:host_scans;" json:"scans,omitempty"`
 }
 
@@ -41,45 +42,53 @@ type Scan struct {
 	LowCount      int `json:"low_count"`
 }
 
+// Tag represents a label applied to a host.
+type Tag struct {
+	gorm.Model
+	Name  string `gorm:"uniqueIndex" json:"name"`
+	Color string `json:"color"`
+}
+
 // Vulnerability represents a definition of a security issue (e.g., a Nessus Plugin).
 type Vulnerability struct {
-	ID        uint           `gorm:"primaryKey" json:"id"`
-	CreatedAt time.Time      `json:"created_at"`
-	UpdatedAt time.Time      `json:"updated_at"`
-	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
+	gorm.Model
+	PluginID    string  `gorm:"uniqueIndex" json:"plugin_id"`
+	Name        string  `json:"name"`
+	Description string  `json:"description"`
+	Solution    string  `json:"solution"`
+	Severity    string  `json:"severity"` // Critical, High, Medium, Low, Info
+	CVSS        float64 `json:"cvss"`
+	Family      string  `json:"family"`
+	CVEs        string  `json:"cves"` // Comma-separated or JSON
 
-	PluginID    string `gorm:"uniqueIndex;size:100" json:"plugin_id"` // String to support potential non-numeric IDs from other scanners later
-	Name        string `gorm:"size:255" json:"name"`
-	Description string `gorm:"type:text" json:"description"`
-	Solution    string `gorm:"type:text" json:"solution"`
-	Severity    string `gorm:"size:50" json:"severity"` // Critical, High, Medium, Low, Info
-	Family      string `gorm:"size:100" json:"family"`
-	HostCount   int    `gorm:"-" json:"host_count"` // Not persisted, calculated on demand
+	// Enrichment
+	RunbookURL string `json:"runbook_url"`
+	InKEV      bool   `json:"in_kev"` // CISA Known Exploited
+
+	HostCount int `gorm:"-" json:"host_count"` // Not persisted
 }
 
 // Finding represents the state of a vulnerability on a specific host.
 type Finding struct {
-	ID        uint           `gorm:"primaryKey" json:"id"`
-	CreatedAt time.Time      `json:"created_at"`
-	UpdatedAt time.Time      `json:"updated_at"`
-	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
+	gorm.Model
+	HostID          uint          `gorm:"index" json:"host_id"`
+	Host            Host          `json:"host"`
+	VulnerabilityID uint          `gorm:"index" json:"vulnerability_id"`
+	Vuln            Vulnerability `gorm:"foreignKey:VulnerabilityID" json:"vuln"`
+	ScanID          uint          `gorm:"index" json:"scan_id"`
+	Port            int           `json:"port"`
+	Protocol        string        `json:"protocol"`
+	FirstSeen       time.Time     `json:"first_seen"`
+	LastSeen        time.Time     `json:"last_seen"`
+	Fingerprint     string        `gorm:"uniqueIndex" json:"fingerprint"`
+	Status          string        `gorm:"size:50;index" json:"status"` // Open, Fixed, Risk Accepted
+	ReopenCount     int           `gorm:"default:0" json:"reopen_count"`
+	FixedAt         time.Time     `json:"fixed_at"`
 
-	HostID uint `gorm:"index" json:"host_id"`
-	Host   Host `gorm:"foreignKey:HostID" json:"host,omitempty"`
+	// Exception Workflow
+	SnoozedUntil    *time.Time `json:"snoozed_until"`
+	ExceptionReason string     `json:"exception_reason"`
 
-	VulnID uint          `gorm:"index" json:"vuln_id"`
-	Vuln   Vulnerability `gorm:"foreignKey:VulnID" json:"vuln,omitempty"`
-
-	Port     int    `json:"port"`
-	Protocol string `gorm:"size:20" json:"protocol"`
-
-	// Fingerprint is the SHA256 hash of TargetIP + PluginID + Port + Protocol
-	Fingerprint string `gorm:"uniqueIndex;size:64" json:"fingerprint"`
-
-	FirstSeen time.Time `json:"first_seen"`
-	LastSeen  time.Time `json:"last_seen"`
-
-	Status      string    `gorm:"size:50;index" json:"status"` // Open, Fixed, Risk Accepted
-	ReopenCount int       `gorm:"default:0" json:"reopen_count"`
-	FixedAt     time.Time `json:"fixed_at"`
+	// Manual Resolution
+	ResolutionNote string `json:"resolution_note"`
 }

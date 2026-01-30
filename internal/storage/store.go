@@ -67,4 +67,30 @@ type Store interface {
 	GetSettings() (map[string]string, error)
 	UpdateSetting(key, value string) error
 	GetSLAConfig() map[string]int
+
+	// Batch 3 Features
+	AddHostTag(hostID uint, tag string, color string) error
+	RemoveHostTag(hostID uint, tagName string) error
+	SnoozeFinding(findingID uint, days int, reason string) error
+	UpdateRunbook(vulnID uint, url string) error
+	GetFixedFindings(days int) ([]FindingSummary, error)
+	GetNewFindings(days int) ([]models.Finding, error)
+	GetTopRiskyHosts(limit int) ([]HostRiskSummary, error)
+	ResolveFinding(findingID uint, note string) error
+}
+
+type FindingSummary struct {
+	HostName      string
+	VulnName      string
+	Severity      string
+	FindingStatus string
+}
+
+type HostRiskSummary struct {
+	HostID        uint
+	Hostname      string
+	IP            string
+	RiskScore     int
+	CriticalCount int
+	HighCount     int
 }

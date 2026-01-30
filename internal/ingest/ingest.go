@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/hootmeow/Vuln-Strix/internal/models"
@@ -141,8 +142,9 @@ func ProcessFile(store storage.Store, filePath string) error {
 				Name:        item.PluginName,
 				Description: item.Description,
 				Solution:    item.Solution,
-				Severity:    sev,
+				Severity:    mapSeverity(item.Severity),
 				Family:      item.PluginFamily,
+				CVEs:        strings.Join(item.CVE, ","),
 			}
 
 			if err := store.UpsertVulnerability(vuln); err != nil {
@@ -154,13 +156,14 @@ func ProcessFile(store storage.Store, filePath string) error {
 			fingerprint := generateFingerprint(host.IP, item.PluginID, item.Port, item.Protocol)
 
 			finding := &models.Finding{
-				HostID:      host.ID,
-				VulnID:      vuln.ID,
-				Port:        item.Port,
-				Protocol:    item.Protocol,
-				Fingerprint: fingerprint,
-				Status:      "Open",
-				LastSeen:    scanTime,
+				HostID:          host.ID,
+				VulnerabilityID: vuln.ID,
+				ScanID:          scan.ID,
+				Port:            item.Port,
+				Protocol:        item.Protocol,
+				Fingerprint:     fingerprint,
+				Status:          "Open",
+				LastSeen:        scanTime,
 			}
 
 			// Check if exists

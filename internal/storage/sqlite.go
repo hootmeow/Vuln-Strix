@@ -24,7 +24,7 @@ func NewSQLiteStore(dbPath string) (*SQLiteStore, error) {
 	}
 
 	db, err := gorm.Open(sqlite.Open(dbPath), &gorm.Config{
-		Logger: logger.Default.LogMode(logger.Warn),
+		Logger: logger.Default.LogMode(logger.Error),
 	})
 	if err != nil {
 		return nil, err
@@ -47,6 +47,7 @@ func (s *SQLiteStore) AutoMigrate() error {
 		&models.Vulnerability{},
 		&models.Finding{},
 		&models.Scan{},
+		&models.Tag{},
 		&Setting{},
 	)
 }
@@ -176,33 +177,24 @@ func (s *SQLiteStore) GetHost(id uint) (*models.Host, error) {
 }
 
 func (s *SQLiteStore) GetVulnerabilities() ([]models.Vulnerability, error) {
-	var vulns []models.Vulnerability
 	// Join with findings to get host count
 	// We use a query that selects vulnerabilities and counts unique host IDs in findings where status is Open
-	err := s.db.Model(&models.Vulnerability{}).
-		Select("vulnerabilities.*, COUNT(DISTINCT findings.host_id) as host_count_calc").
-		Joins("left join findings on findings.vuln_id = vulnerabilities.id AND findings.status = 'Open'").
-		Group("vulnerabilities.id").
-		Find(&vulns).Error
-
-	if err != nil {
-		return nil, err
-	}
-
-	// GORM doesn't natively map Select(count) to a gorm:"-" field easily without manual slice map,
-	// so let's do a quick map or use a result struct.
-	// Actually, easier to just run the count in a loop or use a result struct.
-	// Let's use a result struct for the raw query.
+	// Fix: Column name is vulnerability_id, not vuln_id
 	type ScanResult struct {
 		models.Vulnerability
 		HostCountCalc int
 	}
 	var results []ScanResult
-	s.db.Model(&models.Vulnerability{}).
+
+	err := s.db.Model(&models.Vulnerability{}).
 		Select("vulnerabilities.*, COUNT(DISTINCT findings.host_id) as host_count_calc").
-		Joins("left join findings on findings.vuln_id = vulnerabilities.id AND findings.status = 'Open'").
+		Joins("left join findings on findings.vulnerability_id = vulnerabilities.id AND findings.status = 'Open'").
 		Group("vulnerabilities.id").
-		Scan(&results)
+		Scan(&results).Error
+
+	if err != nil {
+		return nil, err
+	}
 
 	finalVulns := make([]models.Vulnerability, len(results))
 	for i, r := range results {
@@ -423,6 +415,32 @@ func (s *SQLiteStore) GetAgingCohorts() (map[string]int64, error) {
 	return cohorts, nil
 }
 
+// GetFixedFindings returns findings that have been verified Fixed recently (e.g. LastSeen > N days ago AND Status=Fixed)
+// Or better: Status=Fixed.
+func (s *SQLiteStore) GetFixedFindings(days int) ([]FindingSummary, error) {
+	var findings []models.Finding
+	since := time.Now().AddDate(0, 0, -days)
+
+	// In a real scenario, we might track "FixedAt".
+	// For now, if Status is Fixed and LastSeen is recent (meaning the scan that confirmed it as fixed was recent)
+	if err := s.db.Preload("Vuln").Preload("Host").
+		Where("status = ? AND last_seen > ?", "Fixed", since).
+		Find(&findings).Error; err != nil {
+		return nil, err
+	}
+
+	var summaries []FindingSummary
+	for _, f := range findings {
+		summaries = append(summaries, FindingSummary{
+			HostName:      f.Host.Hostname,
+			VulnName:      f.Vuln.Name,
+			Severity:      f.Vuln.Severity,
+			FindingStatus: f.Status,
+		})
+	}
+	return summaries, nil
+}
+
 func (s *SQLiteStore) GetCriticalFindings() ([]models.Finding, error) {
 	var findings []models.Finding
 	// Find findings where status is Open and associated Vuln severity is Critical
@@ -431,4 +449,45 @@ func (s *SQLiteStore) GetCriticalFindings() ([]models.Finding, error) {
 	// Safest GORM way for filtering on association:
 	err := s.db.Joins("Vuln").Preload("Host").Where("Vuln.severity = ? AND findings.status = ?", "Critical", "Open").Find(&findings).Error
 	return findings, err
+}
+
+// GetNewFindings returns findings that were first seen within the last N days (status Open)
+func (s *SQLiteStore) GetNewFindings(days int) ([]models.Finding, error) {
+	var findings []models.Finding
+	since := time.Now().AddDate(0, 0, -days)
+	// We want findings that are Open and FirstSeen is recent.
+	err := s.db.Preload("Vuln").Preload("Host").
+		Where("status = ? AND first_seen >= ?", "Open", since).
+		Order("vulnerability_id asc").
+		Find(&findings).Error
+	return findings, err
+}
+
+// GetTopRiskyHosts calculates a risk score for each host and returns the top N.
+// Risk Score = (Critical * 10) + (High * 5) + (Medium * 1)
+func (s *SQLiteStore) GetTopRiskyHosts(limit int) ([]HostRiskSummary, error) {
+	var results []HostRiskSummary
+	err := s.db.Table("findings").
+		Select("hosts.id as host_id, hosts.hostname, hosts.ip, "+
+			"SUM(CASE WHEN vulnerabilities.severity = 'Critical' THEN 10 WHEN vulnerabilities.severity = 'High' THEN 5 WHEN vulnerabilities.severity = 'Medium' THEN 1 ELSE 0 END) as risk_score, "+
+			"SUM(CASE WHEN vulnerabilities.severity = 'Critical' THEN 1 ELSE 0 END) as critical_count, "+
+			"SUM(CASE WHEN vulnerabilities.severity = 'High' THEN 1 ELSE 0 END) as high_count").
+		Joins("JOIN vulnerabilities ON vulnerabilities.id = findings.vulnerability_id").
+		Joins("JOIN hosts ON hosts.id = findings.host_id").
+		Where("findings.status = ?", "Open").
+		Group("hosts.id, hosts.hostname, hosts.ip").
+		Order("risk_score DESC").
+		Limit(limit).
+		Scan(&results).Error
+
+	return results, err
+}
+
+func (s *SQLiteStore) ResolveFinding(findingID uint, note string) error {
+	return s.db.Model(&models.Finding{}).Where("id = ?", findingID).
+		Updates(map[string]interface{}{
+			"status":          "Fixed",
+			"resolution_note": note,
+			"fixed_at":        time.Now(),
+		}).Error
 }

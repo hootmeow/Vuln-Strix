@@ -54,9 +54,10 @@ type ReportItem struct {
 	Severity     string `xml:"severity,attr"` // Nessus uses 0-4
 	SvcName      string `xml:"svc_name,attr"`
 
-	Description string `xml:"description"`
-	Solution    string `xml:"solution,omitempty"`
-	RiskFactor  string `xml:"risk_factor,omitempty"`
+	Description string   `xml:"description"`
+	Solution    string   `xml:"solution,omitempty"`
+	RiskFactor  string   `xml:"risk_factor,omitempty"`
+	CVE         []string `xml:"cve"`
 }
 
 // Helper to get Tag value

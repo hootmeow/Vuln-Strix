@@ -3,7 +3,9 @@ package sampledata
 import (
 	"encoding/xml"
 	"fmt"
+	"math/rand"
 	"os"
+	"time"
 )
 
 type NessusClientData_v2 struct {
@@ -63,178 +65,106 @@ func Generate(outputDir string) error {
 		return err
 	}
 
-	if err := generateScan1(outputDir); err != nil {
+	// 1. Old Baseline Scan (-95 days ago)
+	if err := generateRandomScan(outputDir, "scan1_baseline.nessus", "Baseline Scan", -95, 50, false); err != nil {
 		return err
 	}
-	if err := generateScan2(outputDir); err != nil {
+
+	// 2. Mid-point Scan (-45 days ago) - Some remediation, some new, same hosts
+	if err := generateRandomScan(outputDir, "scan2_mid.nessus", "Mid-Quarter Scan", -45, 50, true); err != nil {
 		return err
 	}
-	// Add more sample data as requested
-	if err := generateScan3(outputDir); err != nil {
+
+	// 3. Recent Scan (-2 days ago) - More remediation, new hosts
+	if err := generateRandomScan(outputDir, "scan3_recent.nessus", "Recent Scan", -2, 55, true); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func generateScan1(dir string) error {
-	data := NessusClientData_v2{
-		Policy: Policy{
-			PolicyName: "Advanced Dynamic Scan",
-			Preferences: Preferences{
-				ServerPreferences: []Preference{
-					{Name: "plugin_set", Value: "202512210331"},
-				},
-			},
-		},
-		Report: Report{
-			Name: "Scan 1 (Baseline)",
-			ReportHost: []ReportHost{
-				{
-					Name: "192.168.1.100",
-					HostProperties: HostProperties{
-						Tag: []Tag{
-							{Name: "host-ip", Text: "192.168.1.100"},
-							{Name: "host-fqdn", Text: "server-a.local"},
-							{Name: "operating-system", Text: "Linux Kernel 5.x"},
-							{Name: "HOST_START", Text: "Sat Oct 25 10:00:00 2025"},
-							{Name: "HOST_END", Text: "Sat Oct 25 10:30:00 2025"},
-						},
-					},
-					ReportItem: []ReportItem{
-						{
-							PluginID: "10001", PluginName: "Weak Password", PluginFamily: "General",
-							Port: 22, Protocol: "tcp", Severity: "3", Description: "The remote host has a weak password.",
-							Solution: "Enforce a strong password policy.",
-						},
-						{
-							PluginID: "10002", PluginName: "Outdated SSH", PluginFamily: "General",
-							Port: 22, Protocol: "tcp", Severity: "2", Description: "The remote SSH server is outdated.",
-							Solution: "Update the SSH server to the latest version.",
-						},
-					},
-				},
-			},
-		},
-	}
-	return writeFile(dir+"/scan1_baseline.nessus", data)
-}
+func generateRandomScan(dir string, filename string, scanName string, daysOffset int, numHosts int, mutate bool) error {
+	scanDate := time.Now().AddDate(0, 0, daysOffset)
 
-func generateScan2(dir string) error {
-	data := NessusClientData_v2{
-		Policy: Policy{
-			PolicyName: "Basic Network Scan",
-			Preferences: Preferences{
-				ServerPreferences: []Preference{
-					{Name: "plugin_set", Value: "202601280000"},
-				},
-			},
-		},
-		Report: Report{
-			Name: "Scan 2 (Remediation Check)",
-			ReportHost: []ReportHost{
-				{
-					Name: "192.168.1.100",
-					HostProperties: HostProperties{
-						Tag: []Tag{
-							{Name: "host-ip", Text: "192.168.1.100"},
-							{Name: "host-fqdn", Text: "server-a.local"},
-							{Name: "operating-system", Text: "Linux Kernel 5.x"},
-							{Name: "HOST_START", Text: "Sun Dec 14 10:00:00 2025"},
-							{Name: "HOST_END", Text: "Sun Dec 14 10:15:00 2025"},
-						},
-					},
-					ReportItem: []ReportItem{
-						{
-							PluginID: "10001", PluginName: "Weak Password", PluginFamily: "General",
-							Port: 22, Protocol: "tcp", Severity: "3", Description: "The remote host has a weak password.",
-							Solution: "Enforce a strong password policy.",
-						},
-					},
-				},
-				{
-					Name: "192.168.1.101",
-					HostProperties: HostProperties{
-						Tag: []Tag{
-							{Name: "host-ip", Text: "192.168.1.101"},
-							{Name: "host-fqdn", Text: "server-b.local"},
-							{Name: "operating-system", Text: "Windows Server 2019"},
-							{Name: "HOST_START", Text: "Sun Dec 14 10:10:00 2025"},
-							{Name: "HOST_END", Text: "Sun Dec 14 10:20:00 2025"},
-						},
-					},
-					ReportItem: []ReportItem{
-						{
-							PluginID: "20001", PluginName: "SMB Signing Disabled", PluginFamily: "Windows",
-							Port: 445, Protocol: "tcp", Severity: "2", Description: "SMB signing is not enforced.",
-							Solution: "Enforce SMB signing in Group Policy.",
-						},
-					},
-				},
-			},
-		},
-	}
-	return writeFile(dir+"/scan2_remediation.nessus", data)
-}
+	// Deterministic random seed per scan to be somewhat consistent but varied
+	r := rand.New(rand.NewSource(int64(daysOffset + numHosts)))
 
-func generateScan3(dir string) error {
-	// Monthly Patch Audit
-	data := NessusClientData_v2{
-		Policy: Policy{
-			PolicyName: "Credentialed Patch Audit",
-			Preferences: Preferences{
-				ServerPreferences: []Preference{
-					{Name: "plugin_set", Value: "202602150000"},
-				},
-			},
-		},
-		Report: Report{
-			Name: "Scan 3 (Monthly Patching)",
-			ReportHost: []ReportHost{
-				{
-					Name: "192.168.1.100",
-					HostProperties: HostProperties{
-						Tag: []Tag{
-							{Name: "host-ip", Text: "192.168.1.100"},
-							{Name: "host-fqdn", Text: "server-a.local"},
-							{Name: "operating-system", Text: "Linux Kernel 5.x"},
-							{Name: "HOST_START", Text: "Wed Jan 28 02:00:00 2026"},
-							{Name: "HOST_END", Text: "Wed Jan 28 02:25:00 2026"},
-						},
-					},
-					ReportItem: []ReportItem{
-						// Weak Password still there? No, let's say it's fixed.
-						// New vuln detected
-						{
-							PluginID: "30215", PluginName: "Apache Log4j RCE", PluginFamily: "CGI Abuses",
-							Port: 8080, Protocol: "tcp", Severity: "4", Description: "Apache Log4j is vulnerable to RCE.",
-							Solution: "Upgrade Log4j to version 2.17.1 or higher.",
-						},
-					},
-				},
-				{
-					Name: "192.168.1.102", // New Host
-					HostProperties: HostProperties{
-						Tag: []Tag{
-							{Name: "host-ip", Text: "192.168.1.102"},
-							{Name: "host-fqdn", Text: "db-prod.local"},
-							{Name: "operating-system", Text: "Ubuntu 20.04"},
-							{Name: "HOST_START", Text: "Wed Jan 28 02:30:00 2026"},
-							{Name: "HOST_END", Text: "Wed Jan 28 02:55:00 2026"},
-						},
-					},
-					ReportItem: []ReportItem{
-						{
-							PluginID: "10002", PluginName: "Outdated SSH", PluginFamily: "General",
-							Port: 22, Protocol: "tcp", Severity: "2", Description: "The remote SSH server is outdated.",
-							Solution: "Update the SSH server to the latest version.",
-						},
-					},
-				},
-			},
-		},
+	var hosts []ReportHost
+
+	possibleOS := []string{
+		"Windows Server 2019 Standard", "Windows Server 2016 Datacenter",
+		"Ubuntu 20.04 LTS", "Ubuntu 22.04 LTS", "CentOS Linux 7",
+		"Red Hat Enterprise Linux 8.4",
 	}
-	return writeFile(dir+"/scan3_patch_audit.nessus", data)
+
+	for i := 0; i < numHosts; i++ {
+		ip := fmt.Sprintf("192.168.1.%d", 100+i)
+		osName := possibleOS[r.Intn(len(possibleOS))]
+		hostname := fmt.Sprintf("host-%d.local", 100+i)
+
+		startTime := scanDate.Format(time.UnixDate)
+		endTime := scanDate.Add(30 * time.Minute).Format(time.UnixDate)
+
+		host := ReportHost{
+			Name: ip,
+			HostProperties: HostProperties{
+				Tag: []Tag{
+					{Name: "host-ip", Text: ip},
+					{Name: "host-fqdn", Text: hostname},
+					{Name: "operating-system", Text: osName},
+					{Name: "HOST_START", Text: startTime},
+					{Name: "HOST_END", Text: endTime},
+				},
+			},
+			ReportItem: []ReportItem{},
+		}
+
+		// Add Vulnerabilities
+		// Mutate logic: varying severity or presence based on random chance interacting with 'mutate'
+		// If mutate is true, we might skip some (simulating fix) or add new ones.
+
+		// 1. Always present: SMB or SSH Issue based on OS
+		if contains(osName, "Windows") {
+			if !mutate || r.Float32() > 0.3 { // 30% chance to be fixed if mutating
+				host.ReportItem = append(host.ReportItem, ReportItem{
+					PluginID: "10443", PluginName: "Microsoft Windows SMB NTLMv1 Authentication Enabled", PluginFamily: "Windows",
+					Port: 445, Protocol: "tcp", Severity: "3", Description: "The remote Windows host has NTLMv1 enabled.", Solution: "Disable NTLMv1.",
+				})
+			}
+		} else {
+			if !mutate || r.Float32() > 0.3 {
+				host.ReportItem = append(host.ReportItem, ReportItem{
+					PluginID: "10002", PluginName: "Outdated SSH Server", PluginFamily: "General",
+					Port: 22, Protocol: "tcp", Severity: "2", Description: "The remote SSH server is outdated.", Solution: "Upgrade SSH.",
+				})
+			}
+		}
+
+		// 2. Random Criticals (Log4j, etc.)
+		if r.Float32() > 0.8 { // 20% of hosts have a critical
+			host.ReportItem = append(host.ReportItem, ReportItem{
+				PluginID: "156014", PluginName: "Apache Log4j Core RCE", PluginFamily: "CGI Abuses",
+				Port: 8080, Protocol: "tcp", Severity: "4", Description: "Apache Log4j is vulnerable to RCE.", Solution: "Upgrade Log4j.",
+			})
+		}
+
+		// 3. Old legacy stuff (present in baseline, maybe fixed later)
+		if daysOffset < -90 && r.Float32() > 0.5 {
+			host.ReportItem = append(host.ReportItem, ReportItem{
+				PluginID: "41028", PluginName: "SNMP Agent Default Community Name (public)", PluginFamily: "SNMP",
+				Port: 161, Protocol: "udp", Severity: "3", Description: "SNMP agent uses default community string.", Solution: "Disable SNMP or change community string.",
+			})
+		}
+
+		hosts = append(hosts, host)
+	}
+
+	data := NessusClientData_v2{
+		Policy: Policy{PolicyName: scanName},
+		Report: Report{Name: scanName, ReportHost: hosts},
+	}
+
+	return writeFile(dir+"/"+filename, data)
 }
 
 func writeFile(path string, data NessusClientData_v2) error {
@@ -254,4 +184,13 @@ func writeFile(path string, data NessusClientData_v2) error {
 	}
 	fmt.Printf("Created %s\n", path)
 	return nil
+}
+
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) && s[0:len(substr)] != substr // Hacky string check, stdlib strings.Contains better but keeping imports minimal if needed
+}
+
+// Mapping Category to struct field shim
+func (r ReportItem) Category(s string) {
+	// struct tag hack
 }

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"fmt"
 	"html/template"
 	"io"
@@ -68,6 +69,13 @@ func Start(store storage.Store, port int) error {
 	mux.HandleFunc("GET /analytics", s.handleAnalytics)
 	mux.HandleFunc("GET /reports/executive", s.handleExecutiveReport)
 	mux.HandleFunc("GET /export/freshworks", s.handleFreshworksExport)
+
+	// API / Action Routes (Batch 3)
+	mux.HandleFunc("POST /api/hosts/{id}/tags", s.handleAddTag)
+	mux.HandleFunc("DELETE /api/hosts/{id}/tags/{tag}", s.handleRemoveTag)
+	mux.HandleFunc("POST /api/findings/{id}/snooze", s.handleSnooze)
+	mux.HandleFunc("POST /api/findings/{id}/resolve", s.handleResolve)
+	mux.HandleFunc("POST /api/vulns/{id}/runbook", s.handleUpdateRunbook)
 
 	log.Printf("Starting server on port %d...", port)
 	return http.ListenAndServe(fmt.Sprintf(":%d", port), mux)
@@ -261,10 +269,16 @@ func (s *Server) render(w http.ResponseWriter, pageName string, data interface{}
 	// Execute "base.html" which should include the "content" block defined in pageName
 	// BUT: "base.html" is the name of the file. The template name defined inside might be different?
 	// Actually, ParseGlob/Files uses the filename (basename) as the template name.
-	if err := tmpl.ExecuteTemplate(w, "base.html", data); err != nil {
+	// Execute to a buffer first to catch errors before writing to the response
+	var buf bytes.Buffer
+	if err := tmpl.ExecuteTemplate(&buf, "base.html", data); err != nil {
 		log.Printf("Template execution error: %v", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
 	}
+
+	// Successful execution, write buffer to response
+	buf.WriteTo(w)
 }
 
 func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
@@ -455,16 +469,148 @@ func (s *Server) handleExecutiveReport(w http.ResponseWriter, r *http.Request) {
 	// We'll pass the whole Store to the template or pre-calc.
 	// Let's pre-calc a bit.
 
-	data := struct {
-		Date      string
-		NewRisk   int
-		FixedRisk int // Placeholder
-		TotalRisk int
-	}{
-		Date:      time.Now().Format("2006-01-02"),
-		NewRisk:   12, // Dummy for demo if logic complex
-		FixedRisk: 5,
-		TotalRisk: 450,
+	// Fetch actual recently fixed findings for the report
+	fixedFindings, err := s.store.GetFixedFindings(7) // Last 7 days
+	if err != nil {
+		log.Printf("Error getting fixed findings: %v", err)
 	}
+
+	newFindings, err := s.store.GetNewFindings(7)
+	if err != nil {
+		log.Printf("Error getting new findings: %v", err)
+	}
+
+	var criticalNew []models.Finding
+	for _, f := range newFindings {
+		if f.Vuln.Severity == "Critical" || f.Vuln.Severity == "High" {
+			criticalNew = append(criticalNew, f)
+		}
+	}
+
+	topRisky, err := s.store.GetTopRiskyHosts(5)
+	if err != nil {
+		log.Printf("Error getting top risky hosts: %v", err)
+	}
+
+	data := struct {
+		Date          string
+		NewRisk       int
+		FixedRisk     int
+		TotalRisk     int
+		FixedFindings []storage.FindingSummary
+		NewFindings   []models.Finding
+		TopRisky      []storage.HostRiskSummary
+	}{
+		Date:          time.Now().Format("Jan 02, 2006"),
+		NewRisk:       len(newFindings),
+		FixedRisk:     len(fixedFindings),
+		TotalRisk:     0, // Placeholder
+		FixedFindings: fixedFindings,
+		NewFindings:   criticalNew,
+		TopRisky:      topRisky,
+	}
+
 	s.render(w, "report_delta.html", data)
+}
+
+// Batch 3 Handlers
+
+func (s *Server) handleAddTag(w http.ResponseWriter, r *http.Request) {
+	idStr := r.PathValue("id")
+	var id uint
+	fmt.Sscanf(idStr, "%d", &id)
+
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Invalid form", http.StatusBadRequest)
+		return
+	}
+	tagName := r.FormValue("name")
+	color := r.FormValue("color")
+
+	if err := s.store.AddHostTag(id, tagName, color); err != nil {
+		log.Printf("Error adding tag: %v", err)
+		http.Error(w, "Failed to add tag", http.StatusInternalServerError)
+		return
+	}
+	// Return success or redirect
+	// For AJAX, usually JSON. For simplification, we just redirect or 200.
+	if r.Header.Get("X-Requested-With") == "XMLHttpRequest" || r.Header.Get("Accept") == "application/json" {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	http.Redirect(w, r, fmt.Sprintf("/hosts/%d", id), http.StatusSeeOther)
+}
+
+func (s *Server) handleRemoveTag(w http.ResponseWriter, r *http.Request) {
+	idStr := r.PathValue("id")
+	var id uint
+	fmt.Sscanf(idStr, "%d", &id)
+	tagName := r.PathValue("tag")
+
+	if err := s.store.RemoveHostTag(id, tagName); err != nil {
+		http.Error(w, "Failed to remove tag", http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
+func (s *Server) handleSnooze(w http.ResponseWriter, r *http.Request) {
+	idStr := r.PathValue("id")
+	var id uint
+	fmt.Sscanf(idStr, "%d", &id)
+
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Invalid form", http.StatusBadRequest)
+		return
+	}
+	daysStr := r.FormValue("days")
+	reason := r.FormValue("reason")
+	var days int
+	fmt.Sscanf(daysStr, "%d", &days)
+
+	if err := s.store.SnoozeFinding(id, days, reason); err != nil {
+		http.Error(w, "Failed to snooze finding", http.StatusInternalServerError)
+		return
+	}
+	// Redirect back to host details or return JSON
+	// Since this is likely from a modal, we redirect or reload.
+	// We need the Host ID to redirect back to. But we only have finding ID.
+	// We can lookup finding to get Host ID, OR just return 200 for JS reload.
+	w.WriteHeader(http.StatusOK)
+}
+
+func (s *Server) handleUpdateRunbook(w http.ResponseWriter, r *http.Request) {
+	idStr := r.PathValue("id")
+	var id uint
+	fmt.Sscanf(idStr, "%d", &id)
+
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Invalid form", http.StatusBadRequest)
+		return
+	}
+	url := r.FormValue("url")
+
+	if err := s.store.UpdateRunbook(id, url); err != nil {
+		http.Error(w, "Failed to update runbook", http.StatusInternalServerError)
+		return
+	}
+	http.Redirect(w, r, "/vulns", http.StatusSeeOther)
+}
+
+func (s *Server) handleResolve(w http.ResponseWriter, r *http.Request) {
+	idStr := r.PathValue("id")
+	var id uint
+	fmt.Sscanf(idStr, "%d", &id)
+
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Invalid form", http.StatusBadRequest)
+		return
+	}
+	note := r.FormValue("note")
+
+	if err := s.store.ResolveFinding(id, note); err != nil {
+		http.Error(w, "Failed to resolve finding", http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
 }

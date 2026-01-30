@@ -6,190 +6,200 @@
     </div>
 </div>
 
+<!-- Hidden Data Container for JS to read safely -->
+<div id="analyticsData" style="display:none;">
+    <ul id="cohortList">
+        {{ range $k, $v := .Cohorts }}
+        <li data-key="{{$k}}" data-value="{{$v}}"></li>
+        {{ end }}
+    </ul>
+</div>
+
 <!-- Aging Cohorts -->
 <div class="row mb-5">
     <div class="col-md-12">
-        <div class="card shadow-sm">
-            <div class="card-header bg-dark text-white">
-                <h5 class="card-title mb-0">Vulnerability Aging Cohorts</h5>
+        <div class="card shadow-sm border-0">
+            <div class="card-header bg-white border-bottom-0 pb-0 pt-3 ps-3">
+                <h5 class="card-title text-uppercase text-muted small fw-bold">Vulnerability Aging Cohorts</h5>
             </div>
             <div class="card-body">
-                <div class="row">
+                <div class="row align-items-center">
                     <div class="col-md-4">
                         <canvas id="cohortChart" style="max-height: 250px;"></canvas>
                     </div>
                     <div class="col-md-8">
-                        <p class="mt-4">
-                            <strong>The "Basement" of Debt:</strong> This chart groups your open vulnerabilities by
-                            their age.
-                            <br>
+                        <div class="alert alert-light border shadow-sm">
+                            <strong>Technical Debt Analysis:</strong>
                             <span class="text-danger">Legacy (>90d)</span> items represent long-standing risk that
                             requires immediate executive attention.
-                        </p>
-                        <table class="table table-bordered table-sm">
-                            <thead>
+                            A healthy program should have < 10% Legacy items. </div>
+                                <table class="table table-hover table-bordered table-sm mt-3">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>Cohort</th>
+                                            <th>Count</th>
+                                            <th>Health Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {{ range $bucket, $count := .Cohorts }}
+                                        <tr>
+                                            <td>{{ $bucket }}</td>
+                                            <td class="fw-bold">{{ $count }}</td>
+                                            <td>
+                                                {{ if gt $count 50 }}<span class="badge bg-danger">Critical
+                                                    Backlog</span>
+                                                {{ else if gt $count 20 }}<span
+                                                    class="badge bg-warning text-dark">Monitor</span>
+                                                {{ else }}<span class="badge bg-success">Healthy</span>{{ end }}
+                                            </td>
+                                        </tr>
+                                        {{ end }}
+                                    </tbody>
+                                </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Zombies & Ghosts -->
+    <div class="row g-4">
+        <!-- Zombies -->
+        <div class="col-md-6">
+            <div class="card h-100 shadow-sm border-0">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-start mb-3">
+                        <div>
+                            <h5 class="card-title text-uppercase text-danger fw-bold mb-1">Zombie Vulnerabilities</h5>
+                            <p class="small text-muted mb-0">Patch failures (Fixed -> Reopened)</p>
+                        </div>
+                        <span class="badge bg-danger rounded-pill fs-6">{{ len .Zombies }}</span>
+                    </div>
+
+                    {{ if .Zombies }}
+                    <div class="table-responsive">
+                        <table class="table table-hover table-sm">
+                            <thead class="table-light">
                                 <tr>
-                                    <th>Cohort</th>
-                                    <th>Count</th>
-                                    <th>Status</th>
+                                    <th>Host</th>
+                                    <th>Vuln ID</th>
+                                    <th>Reopens</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                {{ range $bucket, $count := .Cohorts }}
+                                {{ range .Zombies }}
                                 <tr>
-                                    <td>{{ $bucket }}</td>
-                                    <td><strong>{{ $count }}</strong></td>
-                                    <td>
-                                        {{ if gt $count 50 }}<span class="badge bg-danger">Critical Backlog</span>
-                                        {{ else if gt $count 20 }}<span
-                                            class="badge bg-warning text-dark">Warning</span>
-                                        {{ else }}<span class="badge bg-success">Managed</span>{{ end }}
-                                    </td>
+                                    <td><a href="/hosts/{{.HostID}}" class="text-decoration-none fw-bold">{{ .Host.IP
+                                            }}</a></td>
+                                    <td title="{{.Vuln.Name}}">{{ .Vuln.PluginID }}</td>
+                                    <td class="text-center fw-bold text-danger">{{ .ReopenCount }}</td>
                                 </tr>
                                 {{ end }}
                             </tbody>
                         </table>
                     </div>
+                    {{ else }}
+                    <div class="text-center py-5 bg-light rounded">
+                        <i class="bi bi-shield-check display-4 text-success opacity-50"></i>
+                        <p class="mt-2 text-muted fw-bold">Zero Zombies Detected</p>
+                    </div>
+                    {{ end }}
+                    <div class="mt-3">
+                        <a href="/export/freshworks" class="btn btn-outline-danger btn-sm w-100">
+                            <i class="bi bi-download"></i> Export Zombie Report (CSV)
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Ghosts -->
+        <div class="col-md-6">
+            <div class="card h-100 shadow-sm border-0">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-start mb-3">
+                        <div>
+                            <h5 class="card-title text-uppercase text-secondary fw-bold mb-1">Ghost Assets</h5>
+                            <p class="small text-muted mb-0">Missing from recent scans (> 30 days)</p>
+                        </div>
+                        <span class="badge bg-secondary rounded-pill fs-6">{{ len .Ghosts }}</span>
+                    </div>
+
+                    {{ if .Ghosts }}
+                    <div class="table-responsive">
+                        <table class="table table-hover table-sm">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Hostname</th>
+                                    <th>IP</th>
+                                    <th>Last Seen</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {{ range .Ghosts }}
+                                <tr>
+                                    <td><a href="/hosts/{{.ID}}" class="text-decoration-none">{{ .Hostname }}</a></td>
+                                    <td>{{ .IP }}</td>
+                                    <td class="text-muted small">{{ .UpdatedAt.Format "2006-01-02" }}</td>
+                                </tr>
+                                {{ end }}
+                            </tbody>
+                        </table>
+                    </div>
+                    {{ else }}
+                    <div class="text-center py-5 bg-light rounded">
+                        <i class="bi bi-activity display-4 text-success opacity-50"></i>
+                        <p class="mt-2 text-muted fw-bold">All Assets Reporting</p>
+                    </div>
+                    {{ end }}
                 </div>
             </div>
         </div>
     </div>
-</div>
+    {{end}}
 
-<!-- Zombies & Ghosts -->
-<div class="row">
-    <!-- Zombies -->
-    <div class="col-md-6 mb-4">
-        <div class="card h-100 shadow-sm border-danger">
-            <div class="card-header bg-danger text-white d-flex justify-content-between align-items-center">
-                <h5 class="card-title mb-0">Zombie Vulnerabilities</h5>
-                <span class="badge bg-light text-danger">{{ len .Zombies }} Detected</span>
-            </div>
-            <div class="card-body">
-                <p class="small text-muted">Findings that were fixed but have reopened. Indicates patch failure.</p>
-                {{ if .Zombies }}
-                <div class="table-responsive">
-                    <table class="table table-hover table-sm">
-                        <thead>
-                            <tr>
-                                <th>Host</th>
-                                <th>Vulnerability</th>
-                                <th>Reopens</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {{ range .Zombies }}
-                            <tr>
-                                <td><a href="/hosts/{{.HostID}}">{{ .Host.IP }}</a></td>
-                                <td title="{{.Vuln.Name}}">{{ .Vuln.PluginID }}</td>
-                                <td class="text-center fw-bold text-danger">{{ .ReopenCount }}</td>
-                            </tr>
-                            {{ end }}
-                        </tbody>
-                    </table>
-                </div>
-                {{ else }}
-                <div class="text-center py-5">
-                    <h3 class="text-success"><i class="bi bi-shield-check"></i></h3>
-                    <p>No zombie vulnerabilities detected.</p>
-                </div>
-                {{ end }}
-                <div class="mt-3">
-                    <a href="/export/freshworks" class="btn btn-outline-danger btn-sm w-100">
-                        <i class="bi bi-ticket-detailed"></i> Export Criticals to Freshworks CSV
-                    </a>
-                </div>
-            </div>
-        </div>
-    </div>
+    {{define "scripts"}}
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        document.addEventListener("DOMContentLoaded", function () {
+            const labels = ["Fresh (<30d)", "Aging (30-60d)", "Stale (60-90d)", "Legacy (90d+)"];
 
-    <!-- Ghosts -->
-    <div class="col-md-6 mb-4">
-        <div class="card h-100 shadow-sm border-secondary">
-            <div class="card-header bg-secondary text-white d-flex justify-content-between align-items-center">
-                <h5 class="card-title mb-0">Ghost Assets</h5>
-                <span class="badge bg-light text-dark">{{ len .Ghosts }} Detected</span>
-            </div>
-            <div class="card-body">
-                <p class="small text-muted">Hosts not seen in scan results for > 30 days.</p>
-                {{ if .Ghosts }}
-                <div class="table-responsive">
-                    <table class="table table-hover table-sm">
-                        <thead>
-                            <tr>
-                                <th>Hostname</th>
-                                <th>IP</th>
-                                <th>Last Seen</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {{ range .Ghosts }}
-                            <tr>
-                                <td><a href="/hosts/{{.ID}}">{{ .Hostname }}</a></td>
-                                <td>{{ .IP }}</td>
-                                <td class="text-muted">{{ .UpdatedAt.Format "2006-01-02" }}</td>
-                            </tr>
-                            {{ end }}
-                        </tbody>
-                    </table>
-                </div>
-                {{ else }}
-                <div class="text-center py-5">
-                    <h3 class="text-success"><i class="bi bi-activity"></i></h3>
-                    <p>All assets are reporting normally.</p>
-                </div>
-                {{ end }}
-            </div>
-        </div>
-    </div>
-</div>
-{{end}}
+            // Parse Cohort Data from DOM safely
+            const dataMap = {};
+            const listItems = document.querySelectorAll('#cohortList li');
+            listItems.forEach(li => {
+                const key = li.getAttribute('data-key');
+                const val = parseInt(li.getAttribute('data-value'), 10);
+                if (key) dataMap[key] = val;
+            });
 
-{{define "scripts"}}
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<script>
-    document.addEventListener("DOMContentLoaded", function () {
-        // Prepare Cohort Data
-        // Go map is unordered, so we might need to sort in JS or server.
-        // For simplicity, we just dump keys/values.
-        // Better: Server should send pre-ordered keys.
-        // Or we map strictly by name.
+            const dataValues = labels.map(l => dataMap[l] || 0);
 
-        const labels = ["Fresh (<30d)", "Aging (30-60d)", "Stale (60-90d)", "Legacy (90d+)"];
-        // We need to match the map keys from Go.
-        // Let's iterate the hidden table to capture values if we want perfect order?
-        // Or just inject json?
-        // Injecting map as JSON is hard in template without marshaller Func.
-        // We will just assume stats are:
-        const dataMap = {
-            { { range $k, $v := .Cohorts } } "{{$k}}": { { $v } }, { { end } }
-    };
-
-    const dataValues = labels.map(l => dataMap[l] || 0);
-
-    const ctx = document.getElementById('cohortChart');
-    if (ctx) {
-        new Chart(ctx, {
-            type: 'pie', // Pie is better for "Market Share" of debt
-            data: {
-                labels: labels,
-                datasets: [{
-                    data: dataValues,
-                    backgroundColor: [
-                        '#28a745', // Success/Fresh
-                        '#ffc107', // Warning/Aging
-                        '#fd7e14', // Orange/Stale
-                        '#dc3545'  // Red/Legacy
-                    ]
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: { legend: { position: 'right' } }
+            const ctx = document.getElementById('cohortChart');
+            if (ctx) {
+                new Chart(ctx, {
+                    type: 'pie',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            data: dataValues,
+                            backgroundColor: [
+                                '#28a745', // Success/Fresh
+                                '#ffc107', // Warning/Aging
+                                '#fd7e14', // Orange/Stale
+                                '#dc3545'  // Red/Legacy
+                            ]
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: { legend: { position: 'right' } }
+                    }
+                });
             }
         });
-    }
-    });
-</script>
-{{end}}
+    </script>
+    {{end}}
