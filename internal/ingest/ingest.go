@@ -172,9 +172,11 @@ func ProcessFile(store storage.Store, filePath string) error {
 				// Update
 				if existing.Status == "Fixed" {
 					existing.ReopenCount++
+					existing.FixedAt = time.Time{} // Clear FixedAt since it's reopened
 					log.Printf("Zombie detected: %s on %s", existing.Fingerprint, host.IP)
 				}
 				existing.LastSeen = scanTime
+				existing.ScanID = scan.ID // Update to current scan
 				existing.Status = "Open"
 				if err := store.UpdateFinding(existing); err != nil {
 					log.Printf("Error updating finding %s: %v", fingerprint, err)

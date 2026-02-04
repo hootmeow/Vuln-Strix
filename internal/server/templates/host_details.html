@@ -205,8 +205,8 @@
                                 <td><a href="https://www.tenable.com/plugins/nessus/{{.Vuln.PluginID}}" target="_blank"
                                         class="text-decoration-none">{{.Vuln.PluginID}}</a></td>
                                 <td>{{.Vuln.Name}}</td>
-                                <td class="small text-success fw-bold">{{.LastSeen.Format "2006-01-02"}}</td>
-                                <td class="small text-muted">{{.ResolutionNote}}</td>
+                                <td class="small text-success fw-bold">{{if not .FixedAt.IsZero}}{{.FixedAt.Format "2006-01-02"}}{{else}}{{.LastSeen.Format "2006-01-02"}}{{end}}</td>
+                                <td class="small">{{if .ResolutionNote}}<span class="text-info">{{.ResolutionNote}}</span>{{else}}<span class="text-muted fst-italic">Auto-detected</span>{{end}}</td>
                             </tr>
                             {{end}}
                             {{end}}
@@ -234,9 +234,8 @@
                                 <td><a href="https://www.tenable.com/plugins/nessus/{{.Vuln.PluginID}}" target="_blank"
                                         class="text-decoration-none">{{.Vuln.PluginID}}</a></td>
                                 <td>{{.Vuln.Name}}</td>
-                                <td><span class="font-monospace small text-warning">{{.SnoozedUntil.Format
-                                        "2006-01-02"}}</span></td>
-                                <td class="small text-muted">{{.ExceptionReason}}</td>
+                                <td><span class="font-monospace small text-warning">{{if .SnoozedUntil}}{{.SnoozedUntil.Format "2006-01-02"}}{{else}}N/A{{end}}</span></td>
+                                <td class="small">{{if .ExceptionReason}}<span class="text-info">{{.ExceptionReason}}</span>{{else}}<span class="text-muted fst-italic">No reason provided</span>{{end}}</td>
                             </tr>
                             {{end}}
                             {{end}}
@@ -365,14 +364,18 @@
         new bootstrap.Modal(document.getElementById('resolveModal')).show();
     }
 
-    // Submit handlers
+    // Submit handlers - use URLSearchParams for proper form encoding
     document.addEventListener("DOMContentLoaded", function () {
         const snoozeForm = document.getElementById('snoozeForm');
         if (snoozeForm) {
             snoozeForm.addEventListener('submit', function (e) {
                 e.preventDefault();
-                fetch(this.action, { method: 'POST', body: new FormData(this) })
-                    .then(res => res.ok ? location.reload() : alert('Failed to accept risk'));
+                const formData = new URLSearchParams(new FormData(this));
+                fetch(this.action, {
+                    method: 'POST',
+                    body: formData,
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+                }).then(res => res.ok ? location.reload() : alert('Failed to accept risk'));
             });
         }
 
@@ -380,8 +383,12 @@
         if (resolveForm) {
             resolveForm.addEventListener('submit', function (e) {
                 e.preventDefault();
-                fetch(this.action, { method: 'POST', body: new FormData(this) })
-                    .then(res => res.ok ? location.reload() : alert('Failed to resolve finding'));
+                const formData = new URLSearchParams(new FormData(this));
+                fetch(this.action, {
+                    method: 'POST',
+                    body: formData,
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+                }).then(res => res.ok ? location.reload() : alert('Failed to resolve finding'));
             });
         }
     });

@@ -55,6 +55,9 @@ func Start(store storage.Store, cfg *config.Config) error {
 		"sub": func(a, b int) int {
 			return a - b
 		},
+		"add": func(a, b int) int {
+			return a + b
+		},
 		"json": func(v interface{}) template.JS {
 			a, _ := json.Marshal(v)
 			return template.JS(a)
@@ -677,12 +680,10 @@ func (s *Server) handleSnooze(w http.ResponseWriter, r *http.Request) {
 	var id uint
 	fmt.Sscanf(idStr, "%d", &id)
 
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, "Invalid form", http.StatusBadRequest)
-		return
-	}
+	r.ParseForm()
 	daysStr := r.FormValue("days")
 	reason := r.FormValue("reason")
+	log.Printf("Snooze request: id=%d, days=%s, reason=%s", id, daysStr, reason)
 	var days int
 	fmt.Sscanf(daysStr, "%d", &days)
 
@@ -720,11 +721,9 @@ func (s *Server) handleResolve(w http.ResponseWriter, r *http.Request) {
 	var id uint
 	fmt.Sscanf(idStr, "%d", &id)
 
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, "Invalid form", http.StatusBadRequest)
-		return
-	}
+	r.ParseForm()
 	note := r.FormValue("note")
+	log.Printf("Resolve request: id=%d, note=%s", id, note)
 
 	if err := s.store.ResolveFinding(id, note); err != nil {
 		http.Error(w, "Failed to resolve finding", http.StatusInternalServerError)

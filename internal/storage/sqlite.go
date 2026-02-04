@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"log"
 	"os"
 	"path/filepath"
 	"sort"
@@ -137,12 +138,25 @@ func (s *SQLiteStore) GetFindingsForHost(hostID uint) ([]models.Finding, error) 
 
 func (s *SQLiteStore) MarkFindingsResolved(hostID uint, scanTime time.Time) error {
 	// Update findings for this host that are currently Open, but their LastSeen is before the scanTime
-	return s.db.Model(&models.Finding{}).
+	// These are findings that were NOT seen in the current scan, indicating they've been remediated
+	now := time.Now()
+	result := s.db.Model(&models.Finding{}).
 		Where("host_id = ? AND status = ? AND last_seen < ?", hostID, "Open", scanTime).
 		Updates(map[string]interface{}{
 			"status":     "Fixed",
-			"updated_at": time.Now(),
-		}).Error
+			"fixed_at":   now,
+			"updated_at": now,
+		})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected > 0 {
+		// Log remediation detection for debugging
+		var host models.Host
+		s.db.First(&host, hostID)
+		log.Printf("Remediation detected: %d findings marked as Fixed for host %s", result.RowsAffected, host.IP)
+	}
+	return nil
 }
 
 func (s *SQLiteStore) GetHostCount() (int64, error) {
@@ -302,18 +316,16 @@ func (s *SQLiteStore) GetMTTRStats(days int) (map[string]float64, error) {
 
 	since := time.Now().AddDate(0, 0, -days)
 	var findings []models.Finding
-	// We use LastSeen as proxy for fixed time if FixedAt is not set, but ideally FixedAt.
-	// In ingest we set FixedAt if it is fixed.
-	// Let's filter by LastSeen > since OR FixedAt > since
-	// Actually, just LastSeen is simpler if we assume Fixed findings have LastSeen = FixedDate.
-	err := s.db.Preload("Vuln").Where("status = ? AND last_seen >= ?", "Fixed", since).Find(&findings).Error
+	// Query findings fixed within the specified time window using fixed_at timestamp
+	err := s.db.Preload("Vuln").Where("status = ? AND fixed_at >= ?", "Fixed", since).Find(&findings).Error
 	if err != nil {
 		return nil, err
 	}
 
 	for _, f := range findings {
-		days := f.LastSeen.Sub(f.FirstSeen).Hours() / 24
-		stats[f.Vuln.Severity] += days
+		// MTTR = time from first detection to fix confirmation
+		mttrDays := f.FixedAt.Sub(f.FirstSeen).Hours() / 24
+		stats[f.Vuln.Severity] += mttrDays
 		counts[f.Vuln.Severity]++
 	}
 
@@ -420,16 +432,15 @@ func (s *SQLiteStore) GetAgingCohorts() (map[string]int64, error) {
 	return cohorts, nil
 }
 
-// GetFixedFindings returns findings that have been verified Fixed recently (e.g. LastSeen > N days ago AND Status=Fixed)
-// Or better: Status=Fixed.
+// GetFixedFindings returns findings that have been verified Fixed recently.
+// Uses fixed_at timestamp to identify when the finding was remediated.
 func (s *SQLiteStore) GetFixedFindings(days int) ([]FindingSummary, error) {
 	var findings []models.Finding
 	since := time.Now().AddDate(0, 0, -days)
 
-	// In a real scenario, we might track "FixedAt".
-	// For now, if Status is Fixed and LastSeen is recent (meaning the scan that confirmed it as fixed was recent)
+	// Query findings that were marked Fixed within the specified time window
 	if err := s.db.Preload("Vuln").Preload("Host").
-		Where("status = ? AND last_seen > ?", "Fixed", since).
+		Where("status = ? AND fixed_at > ?", "Fixed", since).
 		Find(&findings).Error; err != nil {
 		return nil, err
 	}
