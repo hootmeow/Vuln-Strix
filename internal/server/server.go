@@ -13,6 +13,8 @@ import (
 	"sort"
 	"time"
 
+	"github.com/hootmeow/Vuln-Strix/internal/auth"
+	"github.com/hootmeow/Vuln-Strix/internal/config"
 	"github.com/hootmeow/Vuln-Strix/internal/ingest"
 	"github.com/hootmeow/Vuln-Strix/internal/models"
 	"github.com/hootmeow/Vuln-Strix/internal/sampledata"
@@ -20,15 +22,31 @@ import (
 )
 
 type Server struct {
-	store storage.Store
-	port  int
-	tmpl  *template.Template
+	store      storage.Store
+	cfg        *config.Config
+	tmpl       *template.Template
+	sessions   *auth.SessionManager
+	ldapAuth   *auth.LDAPAuthenticator
 }
 
-func Start(store storage.Store, port int) error {
+func Start(store storage.Store, cfg *config.Config) error {
 	s := &Server{
 		store: store,
-		port:  port,
+		cfg:   cfg,
+	}
+
+	// Initialize auth if enabled
+	if cfg.Auth.Enabled {
+		s.sessions = auth.NewSessionManager(cfg.Auth.SessionMinutes)
+		s.ldapAuth = auth.NewLDAPAuthenticator(
+			cfg.Auth.LDAPServer,
+			cfg.Auth.LDAPPort,
+			cfg.Auth.UseTLS,
+			cfg.Auth.BaseDN,
+			cfg.Auth.BindUser,
+			cfg.Auth.BindPassword,
+			cfg.Auth.UserFilter,
+		)
 	}
 
 	// Load base template once
@@ -61,6 +79,22 @@ func Start(store storage.Store, port int) error {
 
 	// Use Go 1.22 enhanced routing
 	mux := http.NewServeMux()
+
+	// Static file server (not protected by auth)
+	staticPath := "static"
+	if _, err := os.Stat(staticPath); os.IsNotExist(err) {
+		staticPath = "../../static"
+	}
+	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.Dir(staticPath))))
+
+	// Auth routes (not protected)
+	if cfg.Auth.Enabled {
+		mux.HandleFunc("GET /login", s.handleLoginPage)
+		mux.HandleFunc("POST /login", s.handleLogin)
+		mux.HandleFunc("GET /logout", s.handleLogout)
+	}
+
+	// Protected routes
 	mux.HandleFunc("GET /", s.handleDashboard)
 	mux.HandleFunc("GET /hosts", s.handleHosts)
 	mux.HandleFunc("GET /hosts/{id}", s.handleHostDetails)
@@ -85,8 +119,20 @@ func Start(store storage.Store, port int) error {
 	mux.HandleFunc("POST /api/findings/{id}/resolve", s.handleResolve)
 	mux.HandleFunc("POST /api/vulns/{id}/runbook", s.handleUpdateRunbook)
 
-	log.Printf("Starting server on port %d...", port)
-	return http.ListenAndServe(fmt.Sprintf(":%d", port), mux)
+	// Wrap with auth middleware if enabled
+	var handler http.Handler = mux
+	if cfg.Auth.Enabled {
+		handler = s.authMiddleware(mux)
+	}
+
+	addr := fmt.Sprintf(":%d", cfg.Server.Port)
+	if cfg.TLS.Enabled {
+		log.Printf("Starting HTTPS server on port %d...", cfg.Server.Port)
+		return http.ListenAndServeTLS(addr, cfg.TLS.CertFile, cfg.TLS.KeyFile, handler)
+	}
+
+	log.Printf("Starting HTTP server on port %d...", cfg.Server.Port)
+	return http.ListenAndServe(addr, handler)
 }
 
 func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
@@ -773,4 +819,111 @@ func (s *Server) handleFindingsExport(w http.ResponseWriter, r *http.Request) {
 		)
 		fmt.Fprintln(w, line)
 	}
+}
+
+// Auth Middleware
+func (s *Server) authMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Skip auth for static files and auth routes
+		if r.URL.Path == "/login" || r.URL.Path == "/logout" ||
+			len(r.URL.Path) > 7 && r.URL.Path[:8] == "/static/" {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		// Check for valid session
+		cookie, err := r.Cookie("vs_session")
+		if err != nil || cookie.Value == "" {
+			http.Redirect(w, r, "/login", http.StatusSeeOther)
+			return
+		}
+
+		session, ok := s.sessions.Get(cookie.Value)
+		if !ok {
+			http.Redirect(w, r, "/login", http.StatusSeeOther)
+			return
+		}
+
+		// Store session in request context
+		r = auth.SetSessionContext(r, session)
+		next.ServeHTTP(w, r)
+	})
+}
+
+func (s *Server) handleLoginPage(w http.ResponseWriter, r *http.Request) {
+	errorMsg := r.URL.Query().Get("error")
+	data := struct {
+		Error string
+	}{
+		Error: errorMsg,
+	}
+	s.render(w, "login.html", data)
+}
+
+func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Redirect(w, r, "/login?error=Invalid+form+data", http.StatusSeeOther)
+		return
+	}
+
+	username := r.FormValue("username")
+	password := r.FormValue("password")
+
+	if username == "" || password == "" {
+		http.Redirect(w, r, "/login?error=Username+and+password+required", http.StatusSeeOther)
+		return
+	}
+
+	// Authenticate against LDAP
+	user, err := s.ldapAuth.Authenticate(username, password)
+	if err != nil {
+		log.Printf("LDAP auth failed for user %s: %v", username, err)
+		http.Redirect(w, r, "/login?error=Invalid+credentials", http.StatusSeeOther)
+		return
+	}
+
+	// Create session
+	sessionID := s.sessions.Create(user)
+
+	// Set cookie
+	http.SetCookie(w, &http.Cookie{
+		Name:     "vs_session",
+		Value:    sessionID,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   s.cfg.TLS.Enabled,
+		SameSite: http.SameSiteLaxMode,
+	})
+
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
+	cookie, err := r.Cookie("vs_session")
+	if err == nil && cookie.Value != "" {
+		s.sessions.Delete(cookie.Value)
+	}
+
+	// Clear cookie
+	http.SetCookie(w, &http.Cookie{
+		Name:     "vs_session",
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		MaxAge:   -1,
+	})
+
+	http.Redirect(w, r, "/login", http.StatusSeeOther)
+}
+
+// GetCurrentUser returns the current user from request context, or nil if no auth
+func (s *Server) getCurrentUser(r *http.Request) *auth.User {
+	if !s.cfg.Auth.Enabled {
+		return nil
+	}
+	session := auth.GetSessionContext(r)
+	if session == nil {
+		return nil
+	}
+	return session.User
 }

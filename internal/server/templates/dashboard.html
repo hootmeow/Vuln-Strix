@@ -1,139 +1,269 @@
 {{define "content"}}
 <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
     <h1 class="h2">Dashboard</h1>
-</div>
-
-<div class="row">
-    <div class="col-md-4">
-        <div class="card text-white bg-danger mb-3">
-            <div class="card-header">Critical Vulnerabilities</div>
-            <div class="card-body">
-                <h5 class="card-title display-4">{{.Stats.Critical}}</h5>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-4">
-        <div class="card text-white bg-warning mb-3">
-            <div class="card-header">High Vulnerabilities</div>
-            <div class="card-body">
-                <h5 class="card-title display-4">{{.Stats.High}}</h5>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-4">
-        <div class="card text-white bg-primary mb-3">
-            <div class="card-header">Total Hosts</div>
-            <div class="card-body">
-                <h5 class="card-title display-4">{{.Stats.Hosts}}</h5>
-            </div>
+    <div class="btn-toolbar">
+        <div class="search-box me-2">
+            <span class="search-icon" data-feather="search"></span>
+            <input type="text" class="form-control form-control-sm" placeholder="Search..." id="globalSearch">
         </div>
     </div>
 </div>
 
-<div class="row mt-4">
-    <div class="col-md-8">
-        <div class="card h-100">
-            <div class="card-header">
-                Vulnerability Trends (Last 6 Months)
+<!-- KPI Cards -->
+<div class="row g-4 mb-4">
+    <div class="col-md-4">
+        <div class="kpi-card kpi-critical">
+            <div class="kpi-icon">
+                <span data-feather="alert-octagon"></span>
             </div>
-            <div class="card-body">
-                <canvas id="trendChart" height="250"></canvas>
+            <div class="kpi-content">
+                <div class="kpi-value" data-counter="{{.Stats.Critical}}" data-counter-duration="1200">0</div>
+                <div class="kpi-label">Critical Vulnerabilities</div>
             </div>
         </div>
     </div>
     <div class="col-md-4">
+        <div class="kpi-card kpi-high">
+            <div class="kpi-icon">
+                <span data-feather="alert-triangle"></span>
+            </div>
+            <div class="kpi-content">
+                <div class="kpi-value" data-counter="{{.Stats.High}}" data-counter-duration="1200">0</div>
+                <div class="kpi-label">High Vulnerabilities</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="kpi-card kpi-primary">
+            <div class="kpi-icon">
+                <span data-feather="server"></span>
+            </div>
+            <div class="kpi-content">
+                <div class="kpi-value" data-counter="{{.Stats.Hosts}}" data-counter-duration="1200">0</div>
+                <div class="kpi-label">Total Hosts</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Charts Row -->
+<div class="row g-4 mt-2">
+    <div class="col-lg-8">
+        <div class="card h-100">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span>
+                    <span data-feather="trending-up" class="me-2"></span>
+                    Vulnerability Trends
+                </span>
+                <span class="badge bg-secondary">Last 6 Months</span>
+            </div>
+            <div class="card-body">
+                <div class="chart-container">
+                    <canvas id="trendChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-4">
         <div class="card h-100">
             <div class="card-header">
+                <span data-feather="pie-chart" class="me-2"></span>
                 Top Risk Families
             </div>
-            <div class="card-body">
-                <canvas id="familyChart" height="250"></canvas>
+            <div class="card-body position-relative">
+                <div class="chart-container">
+                    <canvas id="familyChart"></canvas>
+                    <div class="donut-center" id="donutCenter">
+                        <div class="donut-value">-</div>
+                        <div class="donut-label">Total</div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
 </div>
 
-<!-- Upload moved to Settings/Admin -->
+<!-- Quick Actions -->
+<div class="row g-4 mt-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <span data-feather="zap" class="me-2"></span>
+                Quick Actions
+            </div>
+            <div class="card-body">
+                <div class="d-flex flex-wrap gap-2">
+                    <a href="/reports/executive" class="btn btn-outline-primary quick-action-btn">
+                        <span data-feather="file-text"></span>
+                        Executive Brief
+                    </a>
+                    <a href="/export/findings" class="btn btn-outline-secondary quick-action-btn">
+                        <span data-feather="download"></span>
+                        Export Findings
+                    </a>
+                    <a href="/scans/diff" class="btn btn-outline-secondary quick-action-btn">
+                        <span data-feather="git-pull-request"></span>
+                        Scan Comparison
+                    </a>
+                    <a href="/analytics" class="btn btn-outline-info quick-action-btn">
+                        <span data-feather="activity"></span>
+                        Analytics
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{{end}}
 
+{{define "scripts"}}
 <script>
     document.addEventListener("DOMContentLoaded", function () {
-        // --- Trend Chart ---
-        const rawScans = {{ .Scans | json
-    }};
-    const scans = rawScans ? rawScans.map(s => ({
-        date: new Date(s.ScanStart).toISOString().split('T')[0],
-        count: (s.CriticalCount || 0) + (s.HighCount || 0) + (s.MediumCount || 0) + (s.LowCount || 0)
-    })) : [];
+        feather.replace();
 
-    scans.sort((a, b) => new Date(a.date) - new Date(b.date));
-    const trendLabels = scans.map(s => s.date);
-    const trendData = scans.map(s => s.count);
+        // Get theme for chart colors
+        const isDark = document.documentElement.getAttribute('data-bs-theme') === 'dark';
+        const gridColor = isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)';
+        const textColor = isDark ? '#adb5bd' : '#6c757d';
 
-    const ctxTrend = document.getElementById('trendChart');
-    if (ctxTrend) {
-        new Chart(ctxTrend, {
-            type: 'line',
-            data: {
-                labels: trendLabels,
-                datasets: [{
-                    label: 'Total Vulnerabilities',
-                    data: trendData,
-                    borderColor: '#0d6efd',
-                    backgroundColor: 'rgba(13, 110, 253, 0.1)',
-                    fill: true,
-                    tension: 0.3
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: { legend: { display: false } },
-                scales: { y: { beginAtZero: true } }
-            }
-        });
-    }
+        // --- Trend Chart with Gradient ---
+        const rawScans = {{ .Scans | json }};
+        const scans = rawScans ? rawScans.map(s => ({
+            date: new Date(s.ScanStart).toISOString().split('T')[0],
+            count: (s.CriticalCount || 0) + (s.HighCount || 0) + (s.MediumCount || 0) + (s.LowCount || 0),
+            critical: s.CriticalCount || 0,
+            high: s.HighCount || 0
+        })) : [];
 
-    // --- Family Chart ---
-    const familyStats = {{ .FamilyStats | json }};
-    const families = [];
+        scans.sort((a, b) => new Date(a.date) - new Date(b.date));
+        const trendLabels = scans.map(s => s.date);
+        const trendData = scans.map(s => s.count);
 
-    // Convert Map to Array {name, count}
-    if (familyStats) {
-        for (const [name, count] of Object.entries(familyStats)) {
-            families.push({ name: name, count: count });
-        }
-    }
+        const ctxTrend = document.getElementById('trendChart');
+        if (ctxTrend) {
+            const ctx = ctxTrend.getContext('2d');
+            const gradient = ctx.createLinearGradient(0, 0, 0, 300);
+            gradient.addColorStop(0, 'rgba(13, 110, 253, 0.3)');
+            gradient.addColorStop(1, 'rgba(13, 110, 253, 0.0)');
 
-    // Sort by count desc and take top 5
-    families.sort((a, b) => b.count - a.count);
-    const topFamilies = families.slice(0, 5);
-
-    const famLabels = topFamilies.map(f => f.name);
-    const famData = topFamilies.map(f => f.count);
-
-    const ctxFam = document.getElementById('familyChart');
-    if (ctxFam) {
-        new Chart(ctxFam, {
-            type: 'doughnut',
-            data: {
-                labels: famLabels,
-                datasets: [{
-                    data: famData,
-                    backgroundColor: [
-                        '#dc3545', '#fd7e14', '#ffc107', '#0d6efd', '#6c757d'
-                    ],
-                    hoverOffset: 4
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: { position: 'bottom' }
+            new Chart(ctxTrend, {
+                type: 'line',
+                data: {
+                    labels: trendLabels,
+                    datasets: [{
+                        label: 'Total Vulnerabilities',
+                        data: trendData,
+                        borderColor: '#0d6efd',
+                        backgroundColor: gradient,
+                        fill: true,
+                        tension: 0.4,
+                        borderWidth: 2,
+                        pointRadius: 4,
+                        pointBackgroundColor: '#0d6efd',
+                        pointBorderColor: isDark ? '#2c3034' : '#ffffff',
+                        pointBorderWidth: 2,
+                        pointHoverRadius: 6
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: {
+                        intersect: false,
+                        mode: 'index'
+                    },
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            backgroundColor: isDark ? '#2c3034' : '#ffffff',
+                            titleColor: isDark ? '#e9ecef' : '#212529',
+                            bodyColor: isDark ? '#adb5bd' : '#6c757d',
+                            borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)',
+                            borderWidth: 1,
+                            padding: 12,
+                            cornerRadius: 8
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            grid: { color: gridColor },
+                            ticks: { color: textColor }
+                        },
+                        x: {
+                            grid: { display: false },
+                            ticks: { color: textColor }
+                        }
+                    }
                 }
+            });
+        }
+
+        // --- Family Donut Chart ---
+        const familyStats = {{ .FamilyStats | json }};
+        const families = [];
+
+        if (familyStats) {
+            for (const [name, count] of Object.entries(familyStats)) {
+                families.push({ name: name, count: count });
             }
-        });
-    }
+        }
+
+        families.sort((a, b) => b.count - a.count);
+        const topFamilies = families.slice(0, 5);
+
+        const famLabels = topFamilies.map(f => f.name);
+        const famData = topFamilies.map(f => f.count);
+        const totalFamilyCount = famData.reduce((a, b) => a + b, 0);
+
+        // Update donut center
+        const donutCenter = document.getElementById('donutCenter');
+        if (donutCenter) {
+            donutCenter.querySelector('.donut-value').textContent = totalFamilyCount;
+        }
+
+        const ctxFam = document.getElementById('familyChart');
+        if (ctxFam) {
+            new Chart(ctxFam, {
+                type: 'doughnut',
+                data: {
+                    labels: famLabels,
+                    datasets: [{
+                        data: famData,
+                        backgroundColor: [
+                            '#dc3545', '#fd7e14', '#ffc107', '#0d6efd', '#6c757d'
+                        ],
+                        borderWidth: 0,
+                        hoverOffset: 8
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    cutout: '70%',
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: {
+                                color: textColor,
+                                padding: 15,
+                                usePointStyle: true,
+                                pointStyle: 'circle'
+                            }
+                        },
+                        tooltip: {
+                            backgroundColor: isDark ? '#2c3034' : '#ffffff',
+                            titleColor: isDark ? '#e9ecef' : '#212529',
+                            bodyColor: isDark ? '#adb5bd' : '#6c757d',
+                            borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)',
+                            borderWidth: 1,
+                            padding: 12,
+                            cornerRadius: 8
+                        }
+                    }
+                }
+            });
+        }
     });
 </script>
 {{end}}

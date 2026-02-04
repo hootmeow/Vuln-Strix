@@ -1,18 +1,26 @@
 {{define "content"}}
 <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
     <h1 class="h2">Advanced Security Reports</h1>
+    <a href="/reports/executive" class="btn btn-primary btn-sm">
+        <span data-feather="file-text" class="me-1"></span>
+        Executive Brief
+    </a>
 </div>
 
 {{if not .CanCompare}}
-<div class="alert alert-warning">
+<div class="alert alert-warning d-flex align-items-center">
+    <span data-feather="alert-triangle" class="me-2"></span>
     {{.Message}}
 </div>
 {{else}}
-<div class="row">
+<div class="row g-4">
     <!-- Vulnerability Aging -->
-    <div class="col-md-6">
-        <div class="card mb-4 shadow-sm border-start border-info border-4">
-            <div class="card-header bg-white fw-bold">Vulnerability Aging Breakdown</div>
+    <div class="col-lg-6">
+        <div class="card h-100">
+            <div class="card-header">
+                <span data-feather="clock" class="me-2"></span>
+                Vulnerability Aging Breakdown
+            </div>
             <div class="card-body">
                 <p class="text-muted small">Distribution of open vulnerabilities by their age since discovery.</p>
                 <div class="list-group list-group-flush">
@@ -29,9 +37,12 @@
     </div>
 
     <!-- Remediation Performance (MTTR) -->
-    <div class="col-md-6">
-        <div class="card mb-4 shadow-sm border-start border-success border-4">
-            <div class="card-header bg-white fw-bold">Remediation Performance (MTTR)</div>
+    <div class="col-lg-6">
+        <div class="card h-100">
+            <div class="card-header">
+                <span data-feather="trending-down" class="me-2"></span>
+                Remediation Performance (MTTR)
+            </div>
             <div class="card-body">
                 <p class="text-muted small">Average days to fix vulnerabilities (discovery to resolution).</p>
                 <table class="table table-sm mt-2">
@@ -44,7 +55,7 @@
                     <tbody>
                         {{range $sev, $days := .MTTR}}
                         <tr>
-                            <td><span class="badge severity-{{$sev}}">{{$sev}}</span></td>
+                            <td><span class="severity-badge severity-{{$sev}}">{{$sev}}</span></td>
                             <td class="fw-bold">{{printf "%.1f" $days}} days</td>
                         </tr>
                         {{end}}
@@ -55,13 +66,16 @@
     </div>
 </div>
 
-<div class="row">
+<div class="row g-4 mt-2">
     <!-- SLA Compliance -->
     <div class="col-12">
-        <div class="card mb-4 shadow-sm border-start border-danger border-4">
-            <div class="card-header bg-white d-flex justify-content-between align-items-center">
-                <span class="fw-bold text-danger">SLA Compliance Tracking</span>
-                <span class="badge bg-danger">{{len .SLABreaches}} Items Outside SLA</span>
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span class="text-danger">
+                    <span data-feather="alert-circle" class="me-2"></span>
+                    SLA Compliance Tracking
+                </span>
+                <span class="badge bg-danger rounded-pill">{{len .SLABreaches}} Items Outside SLA</span>
             </div>
             <div class="card-body p-0">
                 <div class="table-responsive">
@@ -77,10 +91,10 @@
                         </thead>
                         <tbody>
                             {{range .SLABreaches}}
-                            <tr>
+                            <tr class="stagger-item">
                                 <td>{{.Host.IP}}</td>
-                                <td>{{.Vuln.Name}}</td>
-                                <td><span class="badge severity-{{.Vuln.Severity}}">{{.Vuln.Severity}}</span></td>
+                                <td class="text-truncate" style="max-width: 300px;">{{.Vuln.Name}}</td>
+                                <td><span class="severity-badge severity-{{.Vuln.Severity}}">{{.Vuln.Severity}}</span></td>
                                 <td>{{.FirstSeen.Format "2006-01-02"}}</td>
                                 <td><span class="badge bg-danger">STALE</span></td>
                             </tr>
@@ -98,11 +112,14 @@
     </div>
 </div>
 
-<div class="row">
+<div class="row g-4 mt-2">
     <!-- Global Scan Delta -->
-    <div class="col-md-12">
-        <div class="card mb-4 shadow-sm">
-            <div class="card-header bg-dark text-white fw-bold">Global Scan Delta</div>
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <span data-feather="git-pull-request" class="me-2"></span>
+                Global Scan Delta
+            </div>
             <div class="card-body">
                 <div class="row text-center">
                     <div class="col-md-3 border-end">

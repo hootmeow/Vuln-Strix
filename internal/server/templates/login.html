@@ -1,0 +1,171 @@
+{{define "content"}}
+<div class="login-container">
+    <div class="login-card">
+        <div class="login-logo">
+            <span data-feather="shield" style="width: 48px; height: 48px; color: #0d6efd;"></span>
+            <h1 class="mt-3">Vuln-Strix</h1>
+            <p>Vulnerability Management Dashboard</p>
+        </div>
+
+        {{if .Error}}
+        <div class="alert alert-danger d-flex align-items-center mb-4" role="alert">
+            <span data-feather="alert-circle" class="me-2"></span>
+            <div>{{.Error}}</div>
+        </div>
+        {{end}}
+
+        <form method="POST" action="/login" class="login-form">
+            <div class="mb-3">
+                <label for="username" class="form-label">Username</label>
+                <div class="input-group">
+                    <span class="input-group-text">
+                        <span data-feather="user"></span>
+                    </span>
+                    <input type="text" class="form-control" id="username" name="username"
+                           placeholder="Enter your username" required autofocus>
+                </div>
+            </div>
+
+            <div class="mb-4">
+                <label for="password" class="form-label">Password</label>
+                <div class="input-group">
+                    <span class="input-group-text">
+                        <span data-feather="lock"></span>
+                    </span>
+                    <input type="password" class="form-control" id="password" name="password"
+                           placeholder="Enter your password" required>
+                </div>
+            </div>
+
+            <button type="submit" class="btn btn-primary btn-login btn-ripple">
+                <span data-feather="log-in" class="me-2"></span>
+                Sign In
+            </button>
+        </form>
+
+        <div class="text-center mt-4">
+            <small class="text-muted">
+                Authenticate with your organization credentials
+            </small>
+        </div>
+    </div>
+</div>
+
+<style>
+/* Override base template styles for login page */
+body {
+    background: linear-gradient(135deg, #1a1d21 0%, #2c3034 100%);
+}
+
+.sidebar, header.navbar {
+    display: none !important;
+}
+
+main {
+    margin: 0 !important;
+    padding: 0 !important;
+    max-width: 100% !important;
+    width: 100% !important;
+}
+
+.container-fluid {
+    padding: 0 !important;
+}
+
+.login-container {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+}
+
+.login-card {
+    width: 100%;
+    max-width: 400px;
+    background: var(--vs-card-bg, #ffffff);
+    border-radius: 1rem;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+    padding: 2.5rem;
+}
+
+.login-logo {
+    text-align: center;
+    margin-bottom: 2rem;
+}
+
+.login-logo h1 {
+    font-size: 1.75rem;
+    font-weight: 700;
+    color: var(--vs-text-primary, #212529);
+    margin-bottom: 0.5rem;
+}
+
+.login-logo p {
+    color: var(--vs-text-muted, #6c757d);
+    font-size: 0.875rem;
+    margin-bottom: 0;
+}
+
+.login-form .form-label {
+    font-weight: 500;
+    color: var(--vs-text-primary, #212529);
+}
+
+.login-form .form-control {
+    padding: 0.75rem 1rem;
+    border-radius: 0.5rem;
+}
+
+.login-form .input-group-text {
+    background-color: transparent;
+    border-right: none;
+}
+
+.login-form .input-group .form-control {
+    border-left: none;
+}
+
+.login-form .input-group-text svg {
+    width: 18px;
+    height: 18px;
+    color: var(--vs-text-muted, #6c757d);
+}
+
+.btn-login {
+    width: 100%;
+    padding: 0.75rem;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.btn-login svg {
+    width: 18px;
+    height: 18px;
+}
+
+[data-bs-theme="dark"] .login-card {
+    background: #2c3034;
+}
+
+[data-bs-theme="dark"] .input-group-text,
+[data-bs-theme="dark"] .form-control {
+    background-color: #1a1d21;
+    border-color: rgba(255, 255, 255, 0.1);
+    color: #e9ecef;
+}
+
+[data-bs-theme="dark"] .form-control::placeholder {
+    color: #6c757d;
+}
+</style>
+{{end}}
+
+{{define "scripts"}}
+<script>
+    // Re-run feather icons for the login page
+    feather.replace();
+</script>
+{{end}}

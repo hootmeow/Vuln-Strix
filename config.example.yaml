@@ -2,9 +2,35 @@ server:
   port: 8080
 
 email:
-  enabled: true
+  enabled: false
   imap_server: "imap.gmail.com"
   imap_port: 993
+  smtp_server: "smtp.gmail.com"
+  smtp_port: 587
   username: "your-email@example.com"
   password: "your-app-password"
+  from_addr: "vuln-strix@example.com"
+  to_addr:
+    - "security-team@example.com"
   poll_interval_seconds: 60
+
+# LDAP/Active Directory Authentication (Optional)
+# When enabled, users must authenticate before accessing the dashboard
+auth:
+  enabled: false
+  ldap_server: "dc.example.com"
+  ldap_port: 389
+  use_tls: false                    # Set to true for LDAPS (port 636)
+  base_dn: "DC=example,DC=com"
+  bind_user: "CN=svc_vuln,OU=Service Accounts,DC=example,DC=com"
+  bind_password: "service_password"
+  user_filter: "(sAMAccountName=%s)"
+  session_minutes: 480              # Session timeout (8 hours)
+
+# TLS/HTTPS Configuration (Optional)
+# Enable for encrypted connections
+tls:
+  enabled: false
+  cert_file: "certs/server.crt"
+  key_file: "certs/server.key"
+  auto_generate_dev: true           # Auto-generate self-signed cert for development

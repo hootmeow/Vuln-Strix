@@ -9,6 +9,27 @@ import (
 type Config struct {
 	Server ServerConfig `yaml:"server"`
 	Email  EmailConfig  `yaml:"email"`
+	Auth   AuthConfig   `yaml:"auth"`
+	TLS    TLSConfig    `yaml:"tls"`
+}
+
+type AuthConfig struct {
+	Enabled        bool   `yaml:"enabled"`
+	LDAPServer     string `yaml:"ldap_server"`
+	LDAPPort       int    `yaml:"ldap_port"`
+	UseTLS         bool   `yaml:"use_tls"`
+	BaseDN         string `yaml:"base_dn"`
+	BindUser       string `yaml:"bind_user"`
+	BindPassword   string `yaml:"bind_password"`
+	UserFilter     string `yaml:"user_filter"`
+	SessionMinutes int    `yaml:"session_minutes"`
+}
+
+type TLSConfig struct {
+	Enabled    bool   `yaml:"enabled"`
+	CertFile   string `yaml:"cert_file"`
+	KeyFile    string `yaml:"key_file"`
+	AutoGenDev bool   `yaml:"auto_generate_dev"`
 }
 
 type ServerConfig struct {

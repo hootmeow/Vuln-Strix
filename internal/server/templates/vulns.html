@@ -1,12 +1,13 @@
 {{define "content"}}
 <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
     <h1 class="h2">Vulnerabilities Library</h1>
+    <span class="badge bg-secondary">{{len .Vulns}} vulnerabilities</span>
 </div>
 
-<div class="row mb-3">
+<div class="row mb-4">
     <div class="col-md-6">
-        <div class="input-group">
-            <span class="input-group-text bg-dark text-white border-secondary"><i class="bi bi-search"></i></span>
+        <div class="search-box">
+            <span class="search-icon" data-feather="search"></span>
             <input type="text" id="customSearch" class="form-control" placeholder="Search all categories...">
         </div>
     </div>
@@ -14,7 +15,7 @@
         <div class="btn-group">
             <button type="button" class="btn btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown"
                 aria-expanded="false">
-                <i class="bi bi-sort-down"></i> Sort By
+                <span data-feather="sliders" class="me-1"></span> Sort By
             </button>
             <ul class="dropdown-menu dropdown-menu-end">
                 <li><a class="dropdown-item" href="#" onclick="setSort(0, 'asc')">Severity (Critical First)</a></li>
@@ -146,11 +147,13 @@
 
 <div id="library-container">
     {{range .GroupedVulns}}
-    <div class="family-section card shadow-sm p-3">
-        <div class="family-header">
+    <div class="family-section card mb-3">
+        <div class="card-header family-header">
+            <span data-feather="folder" class="me-2"></span>
             {{.Name}}
-            <span class="badge bg-secondary rounded-pill ms-2" style="font-size: 0.7em;">{{len .Vulns}}</span>
+            <span class="badge bg-secondary rounded-pill ms-2">{{len .Vulns}}</span>
         </div>
+        <div class="card-body p-3">
 
         <div class="table-responsive">
             <table class="table table-hover table-sm vuln-table w-100">
@@ -165,10 +168,16 @@
                 </thead>
                 <tbody>
                     {{range .Vulns}}
-                    <tr>
-                        <td data-order="{{if eq .Severity " Critical"}}0{{else if eq .Severity "High" }}1{{else if eq
-                            .Severity "Medium" }}2{{else if eq .Severity "Low" }}3{{else}}4{{end}}">
-                            <span class="badge severity-{{.Severity}}">{{.Severity}}</span>
+                    <tr class="stagger-item">
+                        <td data-order="{{if eq .Severity "Critical"}}0{{else if eq .Severity "High"}}1{{else if eq .Severity "Medium"}}2{{else if eq .Severity "Low"}}3{{else}}4{{end}}">
+                            <span class="severity-badge severity-{{.Severity}}">
+                                {{if eq .Severity "Critical"}}<span data-feather="alert-octagon"></span>{{end}}
+                                {{if eq .Severity "High"}}<span data-feather="alert-triangle"></span>{{end}}
+                                {{if eq .Severity "Medium"}}<span data-feather="alert-circle"></span>{{end}}
+                                {{if eq .Severity "Low"}}<span data-feather="info"></span>{{end}}
+                                {{if eq .Severity "Info"}}<span data-feather="help-circle"></span>{{end}}
+                                {{.Severity}}
+                            </span>
                         </td>
                         <td>
                             <a href="https://www.tenable.com/plugins/nessus/{{.PluginID}}" target="_blank"
@@ -202,6 +211,7 @@
                     {{end}}
                 </tbody>
             </table>
+        </div>
         </div>
     </div>
     {{end}}
@@ -240,30 +250,30 @@
 
 <script>
     $(document).ready(function () {
-        // Initialize DataTables for ALL tables with class .vuln-table
+        feather.replace();
+
         var tables = $('.vuln-table').DataTable({
-            "pageLength": 5, // Smaller pagination limit
-            "dom": 'tp', // Only Table (t) and Pagination (p) - Hide Search/Info per table
+            "pageLength": 5,
+            "dom": 'tp',
             "ordering": true,
-            "order": [[0, "asc"], [2, "asc"]], // Default: Severity -> Name
+            "order": [[0, "asc"], [2, "asc"]],
             "columnDefs": [
-                { "orderable": false, "targets": 4 } // Disable sort on actions
+                { "orderable": false, "targets": 4 }
             ],
             "language": {
                 "paginate": {
-                    "next": "<i class='bi bi-chevron-right'></i>",
-                    "previous": "<i class='bi bi-chevron-left'></i>"
+                    "next": "&raquo;",
+                    "previous": "&laquo;"
                 },
                 "emptyTable": "No vulnerabilities in this category"
+            },
+            "drawCallback": function() {
+                feather.replace();
             }
         });
 
-        // Global Search: Filters ALL tables
         $('#customSearch').on('keyup', function () {
             tables.search(this.value).draw();
-
-            // Optional: Hide empty cards if no results in that table?
-            // Would require iterating over tables and checking info.recordsDisplay()
         });
     });
 
