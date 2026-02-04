@@ -1,0 +1,130 @@
+{{define "content"}}
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2">
+        <span class="badge me-2" style="background-color: {{.Framework.Color}}">{{.Framework.Code}}</span>
+        Gap Analysis
+    </h1>
+    <div class="btn-toolbar">
+        <a href="/compliance/{{.Framework.Code}}" class="btn btn-outline-secondary btn-sm me-2">
+            <span data-feather="list" class="me-1"></span>
+            View Controls
+        </a>
+        <a href="/compliance" class="btn btn-outline-secondary btn-sm">
+            <span data-feather="arrow-left" class="me-1"></span>
+            Back
+        </a>
+    </div>
+</div>
+
+{{if .Gaps}}
+<!-- Summary Stats -->
+<div class="row g-4 mb-4">
+    <div class="col-md-3">
+        <div class="card bg-danger bg-opacity-10 border-danger">
+            <div class="card-body text-center">
+                <div class="fs-2 fw-bold text-danger">{{len .Gaps}}</div>
+                <div class="text-muted">Total Gaps</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-danger bg-opacity-10 border-danger">
+            <div class="card-body text-center">
+                {{$critCount := 0}}
+                {{range .Gaps}}{{if eq .Severity "Critical"}}{{$critCount = add $critCount 1}}{{end}}{{end}}
+                <div class="fs-2 fw-bold text-danger">{{$critCount}}</div>
+                <div class="text-muted">Critical</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-warning bg-opacity-10 border-warning">
+            <div class="card-body text-center">
+                {{$highCount := 0}}
+                {{range .Gaps}}{{if eq .Severity "High"}}{{$highCount = add $highCount 1}}{{end}}{{end}}
+                <div class="fs-2 fw-bold text-warning">{{$highCount}}</div>
+                <div class="text-muted">High</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-info bg-opacity-10 border-info">
+            <div class="card-body text-center">
+                {{$totalHosts := 0}}
+                {{range .Gaps}}{{$totalHosts = add $totalHosts .AffectedHosts}}{{end}}
+                <div class="fs-2 fw-bold text-info">{{$totalHosts}}</div>
+                <div class="text-muted">Affected Hosts</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Gaps Table -->
+<div class="card">
+    <div class="card-header">
+        <span data-feather="alert-triangle" class="me-2"></span>
+        Compliance Gaps - {{.Framework.Name}}
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead>
+                    <tr>
+                        <th>Severity</th>
+                        <th>Control</th>
+                        <th>Vulnerability</th>
+                        <th class="text-center">Affected Hosts</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {{range .Gaps}}
+                    <tr>
+                        <td>
+                            <span class="badge bg-{{if eq .Severity "Critical"}}danger{{else if eq .Severity "High"}}warning{{else if eq .Severity "Medium"}}info{{else}}secondary{{end}}">
+                                {{.Severity}}
+                            </span>
+                        </td>
+                        <td>
+                            <div class="fw-medium">{{.Control.ControlID}}</div>
+                            <small class="text-muted">{{.Control.Title}}</small>
+                        </td>
+                        <td>
+                            <div class="text-truncate" style="max-width: 300px;" title="{{.Vulnerability.Name}}">
+                                {{.Vulnerability.Name}}
+                            </div>
+                        </td>
+                        <td class="text-center">
+                            <span class="badge bg-secondary">{{.AffectedHosts}}</span>
+                        </td>
+                        <td>
+                            <a href="/vulns" class="btn btn-sm btn-outline-primary">
+                                <span data-feather="eye" style="width:14px;height:14px;"></span>
+                            </a>
+                        </td>
+                    </tr>
+                    {{end}}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{{else}}
+<div class="text-center py-5">
+    <span data-feather="check-circle" style="width:64px;height:64px;" class="text-success mb-3"></span>
+    <h4>No Compliance Gaps</h4>
+    <p class="text-muted">Congratulations! All {{.Framework.Code}} controls are compliant.</p>
+    <a href="/compliance/{{.Framework.Code}}" class="btn btn-primary">
+        View Controls
+    </a>
+</div>
+{{end}}
+{{end}}
+
+{{define "scripts"}}
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    feather.replace();
+});
+</script>
+{{end}}

@@ -1,0 +1,66 @@
+{{define "content"}}
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2"><span data-feather="trending-up" class="me-2"></span>Trending Analytics</h1>
+</div>
+
+<div class="row g-4">
+    <div class="col-lg-8">
+        <div class="card">
+            <div class="card-header">Velocity - New vs Fixed (Weekly)</div>
+            <div class="card-body"><canvas id="velocityChart" height="300"></canvas></div>
+        </div>
+    </div>
+    <div class="col-lg-4">
+        <div class="card">
+            <div class="card-header">MTTR by Severity</div>
+            <div class="card-body"><canvas id="mttrChart" height="300"></canvas></div>
+        </div>
+    </div>
+</div>
+{{end}}
+
+{{define "scripts"}}
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    feather.replace();
+    const velocity = {{.Velocity | json}};
+    const mttr = {{.MTTRTrend | json}};
+    const isDark = document.documentElement.getAttribute('data-bs-theme') === 'dark';
+    const textColor = isDark ? '#adb5bd' : '#6c757d';
+
+    if (velocity && velocity.length > 0) {
+        new Chart(document.getElementById('velocityChart'), {
+            type: 'bar',
+            data: {
+                labels: velocity.map(v => v.PeriodEnd.split('T')[0]),
+                datasets: [
+                    {label: 'New', data: velocity.map(v => v.NewCount), backgroundColor: '#dc3545'},
+                    {label: 'Fixed', data: velocity.map(v => v.FixedCount), backgroundColor: '#198754'}
+                ]
+            },
+            options: {responsive: true, maintainAspectRatio: false, scales: {y: {beginAtZero: true}}}
+        });
+    }
+
+    if (mttr && mttr.length > 0) {
+        const sevs = [...new Set(mttr.map(m => m.Severity))];
+        const colors = {Critical: '#dc3545', High: '#fd7e14', Medium: '#ffc107', Low: '#0dcaf0'};
+        new Chart(document.getElementById('mttrChart'), {
+            type: 'bar',
+            data: {
+                labels: sevs,
+                datasets: [{
+                    label: 'Avg MTTR (days)',
+                    data: sevs.map(s => {
+                        const items = mttr.filter(m => m.Severity === s);
+                        return items.length ? items.reduce((a,b) => a + b.MTTR, 0) / items.length : 0;
+                    }),
+                    backgroundColor: sevs.map(s => colors[s] || '#6c757d')
+                }]
+            },
+            options: {responsive: true, maintainAspectRatio: false, indexAxis: 'y'}
+        });
+    }
+});
+</script>
+{{end}}

@@ -155,63 +155,74 @@
         </div>
         <div class="card-body p-3">
 
-        <div class="table-responsive">
-            <table class="table table-hover table-sm vuln-table w-100">
-                <thead>
-                    <tr>
-                        <th style="width: 80px;">Severity</th>
-                        <th style="width: 100px;">Plugin ID</th>
-                        <th>Name</th>
-                        <th style="width: 100px;" class="text-center">Hosts</th>
-                        <th style="width: 80px;" class="text-end">Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {{range .Vulns}}
-                    <tr class="stagger-item">
-                        <td data-order="{{if eq .Severity "Critical"}}0{{else if eq .Severity "High"}}1{{else if eq .Severity "Medium"}}2{{else if eq .Severity "Low"}}3{{else}}4{{end}}">
-                            <span class="severity-badge severity-{{.Severity}}">
-                                {{if eq .Severity "Critical"}}<span data-feather="alert-octagon"></span>{{end}}
-                                {{if eq .Severity "High"}}<span data-feather="alert-triangle"></span>{{end}}
-                                {{if eq .Severity "Medium"}}<span data-feather="alert-circle"></span>{{end}}
-                                {{if eq .Severity "Low"}}<span data-feather="info"></span>{{end}}
-                                {{if eq .Severity "Info"}}<span data-feather="help-circle"></span>{{end}}
-                                {{.Severity}}
-                            </span>
-                        </td>
-                        <td>
-                            <a href="https://www.tenable.com/plugins/nessus/{{.PluginID}}" target="_blank"
-                                class="text-decoration-none font-monospace small">
-                                {{.PluginID}}
-                            </a>
-                        </td>
-                        <td>
-                            <div class="fw-bold text-dark text-truncate" style="max-width: 450px;" title="{{.Name}}">
-                                {{.Name}}</div>
-                            {{if .InKEV}}
-                            <span class="badge bg-danger" style="font-size: 0.65em;">
-                                <i class="bi bi-exclamation-octagon-fill"></i> KEV
-                            </span>
-                            {{end}}
-                        </td>
-                        <td class="text-center">
-                            {{if gt .HostCount 0}}
-                            <span class="badge bg-primary rounded-pill">{{.HostCount}}</span>
-                            {{else}}
-                            <span class="text-muted small">-</span>
-                            {{end}}
-                        </td>
-                        <td class="text-end">
-                            <button class="btn btn-sm btn-outline-secondary py-0"
-                                onclick="openRunbookModal({{.ID}}, '{{.RunbookURL}}')" title="Edit Runbook">
-                                <i class="bi bi-pencil" style="font-size: 0.8rem;"></i>
-                            </button>
-                        </td>
-                    </tr>
-                    {{end}}
-                </tbody>
-            </table>
-        </div>
+            <div class="table-responsive">
+                <table class="table table-hover table-sm vuln-table w-100">
+                    <thead>
+                        <tr>
+                            <th style="width: 80px;">Severity</th>
+                            <th style="width: 100px;">Plugin ID</th>
+                            <th>Name</th>
+                            <th>Compliance</th>
+                            <th style="width: 100px;" class="text-center">Hosts</th>
+                            <th style="width: 80px;" class="text-end">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {{range .Vulns}}
+                        <tr class="stagger-item">
+                            <td data-order="{{if eq .Severity " Critical"}}0{{else if eq .Severity "High" }}1{{else if
+                                eq .Severity "Medium" }}2{{else if eq .Severity "Low" }}3{{else}}4{{end}}">
+                                <span class="severity-badge severity-{{.Severity}}">
+                                    {{if eq .Severity "Critical"}}<span data-feather="alert-octagon"></span>{{end}}
+                                    {{if eq .Severity "High"}}<span data-feather="alert-triangle"></span>{{end}}
+                                    {{if eq .Severity "Medium"}}<span data-feather="alert-circle"></span>{{end}}
+                                    {{if eq .Severity "Low"}}<span data-feather="info"></span>{{end}}
+                                    {{if eq .Severity "Info"}}<span data-feather="help-circle"></span>{{end}}
+                                    {{.Severity}}
+                                </span>
+                            </td>
+                            <td>
+                                <a href="https://www.tenable.com/plugins/nessus/{{.PluginID}}" target="_blank"
+                                    class="text-decoration-none font-monospace small">
+                                    {{.PluginID}}
+                                </a>
+                            </td>
+                            <td>
+                                <div class="fw-bold text-dark text-truncate" style="max-width: 450px;"
+                                    title="{{.Name}}">
+                                    {{.Name}}</div>
+                                {{if .InKEV}}
+                                <span class="badge bg-danger" style="font-size: 0.65em;">
+                                    <i class="bi bi-exclamation-octagon-fill"></i> KEV
+                                </span>
+                                {{end}}
+                            </td>
+                            <td>
+                                {{if .Compliance}}
+                                {{range $ref := split .Compliance ", "}}
+                                <span class="badge bg-info text-dark rounded-pill"
+                                    style="font-size: 0.7em;">{{$ref}}</span>
+                                {{end}}
+                                {{end}}
+                            </td>
+                            <td class="text-center">
+                                {{if gt .HostCount 0}}
+                                <span class="badge bg-primary rounded-pill">{{.HostCount}}</span>
+                                {{else}}
+                                <span class="text-muted small">-</span>
+                                {{end}}
+                            </td>
+                            <td class="text-end">
+                                <button class="btn btn-sm btn-outline-secondary py-0"
+                                    onclick="openRunbookModal({{.ID}}, '{{.RunbookURL}}')" title="Edit Runbook">
+                                    <i class="bi bi-pencil" style="font-size: 0.8rem;"></i>
+                                </button>
+                            </td>
+                        </tr>
+                        {{end}}
+                    </tbody>
+                </table>
+            </div>
         </div>
     </div>
     {{end}}
@@ -267,7 +278,7 @@
                 },
                 "emptyTable": "No vulnerabilities in this category"
             },
-            "drawCallback": function() {
+            "drawCallback": function () {
                 feather.replace();
             }
         });

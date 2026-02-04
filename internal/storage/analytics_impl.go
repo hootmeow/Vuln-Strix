@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"log"
 	"time"
 
 	"github.com/hootmeow/Vuln-Strix/internal/models"
@@ -90,9 +91,11 @@ func (s *SQLiteStore) GetFamilyStats(days int) (map[string]int, error) {
 		Scan(&results).Error
 
 	if err != nil {
+		log.Printf("GetFamilyStats query error: %v", err)
 		return nil, err
 	}
 
+	log.Printf("GetFamilyStats: found %d family groups", len(results))
 	for _, r := range results {
 		if r.Family == "" {
 			stats["Unknown"] = r.Count

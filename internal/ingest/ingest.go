@@ -55,20 +55,35 @@ func ProcessFile(store storage.Store, filePath string) error {
 
 	for _, rh := range data.Report.ReportHost {
 		// Parse Times
-		startStr := rh.HostProperties.Get("HOST_START") // "Fri Dec 19 19:12:08 2025" or similar
+		startStr := rh.HostProperties.Get("HOST_START") // "Sat Nov  1 00:13:05 EDT 2025" or similar
 		endStr := rh.HostProperties.Get("HOST_END")
 
-		// Nessus format: "Mon Jan 02 15:04:05 2006"
-		layout := "Mon Jan 02 15:04:05 2006"
+		// Try multiple Nessus date formats
+		layouts := []string{
+			"Mon Jan 2 15:04:05 MST 2006",  // With timezone, single-digit day
+			"Mon Jan 02 15:04:05 MST 2006", // With timezone, two-digit day
+			"Mon Jan 2 15:04:05 2006",      // No timezone, single-digit day
+			"Mon Jan 02 15:04:05 2006",     // No timezone, two-digit day
+		}
 
-		if t, err := time.Parse(layout, startStr); err == nil {
-			if scanStart.IsZero() || t.Before(scanStart) {
-				scanStart = t
+		// Normalize multiple spaces to single space
+		startStr = strings.Join(strings.Fields(startStr), " ")
+		endStr = strings.Join(strings.Fields(endStr), " ")
+
+		for _, layout := range layouts {
+			if t, err := time.Parse(layout, startStr); err == nil {
+				if scanStart.IsZero() || t.Before(scanStart) {
+					scanStart = t
+				}
+				break
 			}
 		}
-		if t, err := time.Parse(layout, endStr); err == nil {
-			if scanEnd.IsZero() || t.After(scanEnd) {
-				scanEnd = t
+		for _, layout := range layouts {
+			if t, err := time.Parse(layout, endStr); err == nil {
+				if scanEnd.IsZero() || t.After(scanEnd) {
+					scanEnd = t
+				}
+				break
 			}
 		}
 	}
@@ -145,6 +160,7 @@ func ProcessFile(store storage.Store, filePath string) error {
 				Severity:    mapSeverity(item.Severity),
 				Family:      item.PluginFamily,
 				CVEs:        strings.Join(item.CVE, ","),
+				Compliance:  parseCompliance(item.Xref),
 			}
 
 			if err := store.UpsertVulnerability(vuln); err != nil {
@@ -202,20 +218,14 @@ func ProcessFile(store storage.Store, filePath string) error {
 	scan.HighCount = high
 	scan.MediumCount = med
 	scan.LowCount = low
-	// Since we created it earlier, we need to save it again.
-	// But `store` doesn't have UpdateScan yet. I'll just use GORM direct or add UpdateScan?
-	// The `Store` interface doesn't have UpdateScan.
-	// HACK: I should have added UpdateScan. But for now, let's just create it with 0 stats and then ... wait
-	// I cannot calculate stats *before* creating the scan if I needed the ID for linking.
-	// Actually, I can process everything and then update the scan at the end.
-	// I'll need to add UpdateScan to the interface or just re-save it.
-	// For expediency, I will assume I can update it via `CreateScan` if ID is set? No, `Create` might error on duplicate key.
-	// I'll add `UpdateScan` to the interface.
+
+	log.Printf("Scan %d stats: Critical=%d, High=%d, Medium=%d, Low=%d", scan.ID, crit, high, med, low)
+
 	if err := store.UpdateScan(scan); err != nil {
 		log.Printf("Error updating scan stats for scan %d: %v", scan.ID, err)
 	}
 
-	log.Println("Ingestion complete.")
+	log.Printf("Ingestion complete. Scan ID: %d, Name: %s", scan.ID, scan.Name)
 	return nil
 }
 
@@ -238,4 +248,20 @@ func generateFingerprint(ip, pluginID string, port int, protocol string) string 
 	data := fmt.Sprintf("%s|%s|%d|%s", ip, pluginID, port, protocol)
 	hash := sha256.Sum256([]byte(data))
 	return hex.EncodeToString(hash[:])
+}
+
+func parseCompliance(xrefs []string) string {
+	var compliance []string
+	for _, ref := range xrefs {
+		// Common keys: "PCI-DSS", "NIST", "CIS", "HIPAA", "ISO"
+		upper := strings.ToUpper(ref)
+		if strings.Contains(upper, "PCI") ||
+			strings.Contains(upper, "NIST") ||
+			strings.Contains(upper, "CIS") ||
+			strings.Contains(upper, "HIPAA") ||
+			strings.Contains(upper, "ISO") {
+			compliance = append(compliance, ref)
+		}
+	}
+	return strings.Join(compliance, ", ")
 }

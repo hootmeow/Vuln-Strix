@@ -1,0 +1,78 @@
+{{define "content"}}
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2"><span data-feather="search" class="me-2"></span>Advanced Search</h1>
+</div>
+
+<div class="card mb-4">
+    <div class="card-body">
+        <div class="input-group input-group-lg">
+            <input type="text" class="form-control" id="searchInput" placeholder="Search... (e.g., severity:critical status:open SMB)">
+            <button class="btn btn-primary" type="button" id="searchBtn">
+                <span data-feather="search"></span> Search
+            </button>
+        </div>
+        <small class="text-muted mt-2 d-block">
+            DSL: <code>severity:critical</code> <code>status:open</code> <code>tag:production</code> or free text
+        </small>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-3">
+        <div class="card">
+            <div class="card-header">Saved Filters</div>
+            <div class="list-group list-group-flush" id="savedFilters">
+                {{range .SavedFilters}}
+                <a href="#" class="list-group-item list-group-item-action" data-filter="{{.FilterJSON}}">{{.Name}}</a>
+                {{else}}
+                <div class="list-group-item text-muted">No saved filters</div>
+                {{end}}
+            </div>
+        </div>
+    </div>
+    <div class="col-md-9">
+        <div class="card">
+            <div class="card-header">Results <span id="resultCount" class="badge bg-secondary">0</span></div>
+            <div class="card-body p-0" id="results">
+                <div class="text-center py-5 text-muted">Enter a search query above</div>
+            </div>
+        </div>
+    </div>
+</div>
+{{end}}
+
+{{define "scripts"}}
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    feather.replace();
+    const input = document.getElementById('searchInput');
+    const btn = document.getElementById('searchBtn');
+    const results = document.getElementById('results');
+    const count = document.getElementById('resultCount');
+
+    async function doSearch() {
+        const q = input.value;
+        if (!q) return;
+        const resp = await fetch('/api/search?q=' + encodeURIComponent(q));
+        const data = await resp.json();
+        count.textContent = data.length;
+        if (data.length === 0) {
+            results.innerHTML = '<div class="text-center py-5 text-muted">No results found</div>';
+            return;
+        }
+        let html = '<div class="list-group list-group-flush">';
+        data.forEach(r => {
+            html += '<a href="' + (r.URL || '#') + '" class="list-group-item list-group-item-action">';
+            html += '<div class="d-flex justify-content-between"><strong>' + r.Title + '</strong>';
+            if (r.Severity) html += '<span class="badge bg-' + (r.Severity==='Critical'?'danger':r.Severity==='High'?'warning':'secondary') + '">' + r.Severity + '</span>';
+            html += '</div><small class="text-muted">' + r.Type + ' - ' + r.Subtitle + '</small></a>';
+        });
+        html += '</div>';
+        results.innerHTML = html;
+    }
+
+    btn.addEventListener('click', doSearch);
+    input.addEventListener('keypress', e => { if (e.key === 'Enter') doSearch(); });
+});
+</script>
+{{end}}

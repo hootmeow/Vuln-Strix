@@ -58,6 +58,7 @@ type ReportItem struct {
 	Solution    string   `xml:"solution,omitempty"`
 	RiskFactor  string   `xml:"risk_factor,omitempty"`
 	CVE         []string `xml:"cve"`
+	Xref        []string `xml:"xref"`
 }
 
 // Helper to get Tag value

@@ -1,0 +1,131 @@
+{{define "content"}}
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2">
+        <span class="badge me-2" style="background-color: {{.Framework.Color}}">{{.Framework.Code}}</span>
+        {{.Framework.Name}}
+        <small class="text-muted fs-6">v{{.Framework.Version}}</small>
+    </h1>
+    <div class="btn-toolbar">
+        <a href="/compliance/{{.Framework.Code}}/gaps" class="btn btn-outline-danger btn-sm me-2">
+            <span data-feather="alert-triangle" class="me-1"></span>
+            Gap Analysis
+        </a>
+        <a href="/compliance" class="btn btn-outline-secondary btn-sm">
+            <span data-feather="arrow-left" class="me-1"></span>
+            Back
+        </a>
+    </div>
+</div>
+
+<!-- Stats Cards -->
+{{if .Stats}}
+<div class="row g-4 mb-4">
+    <div class="col-md-3">
+        <div class="card">
+            <div class="card-body text-center">
+                <div class="fs-2 fw-bold">{{.Stats.TotalControls}}</div>
+                <div class="text-muted">Total Controls</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card">
+            <div class="card-body text-center">
+                <div class="fs-2 fw-bold text-success">{{sub .Stats.TotalControls .Stats.ViolatedCount}}</div>
+                <div class="text-muted">Compliant</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card">
+            <div class="card-body text-center">
+                <div class="fs-2 fw-bold text-danger">{{.Stats.ViolatedCount}}</div>
+                <div class="text-muted">Violated</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card" style="border-left: 4px solid {{.Framework.Color}}">
+            <div class="card-body text-center">
+                <div class="fs-2 fw-bold" style="color: {{.Framework.Color}}">{{printf "%.0f" .Stats.ComplianceRate}}%</div>
+                <div class="text-muted">Compliance Rate</div>
+            </div>
+        </div>
+    </div>
+</div>
+{{end}}
+
+<!-- Controls Table -->
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <span>
+            <span data-feather="list" class="me-2"></span>
+            Controls ({{len .Controls}})
+        </span>
+        <input type="text" class="form-control form-control-sm" style="width: 200px;"
+               placeholder="Filter controls..." id="controlFilter">
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0" id="controlsTable">
+                <thead>
+                    <tr>
+                        <th style="width: 100px;">Control ID</th>
+                        <th>Title</th>
+                        <th class="text-center" style="width: 100px;">Priority</th>
+                        <th class="text-center" style="width: 100px;">Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {{range .Controls}}
+                    <tr class="control-row">
+                        <td>
+                            <code>{{.ControlID}}</code>
+                        </td>
+                        <td>{{.Title}}</td>
+                        <td class="text-center">
+                            {{if eq .Priority 1}}
+                            <span class="badge bg-danger">P1</span>
+                            {{else if eq .Priority 2}}
+                            <span class="badge bg-warning">P2</span>
+                            {{else}}
+                            <span class="badge bg-secondary">P3</span>
+                            {{end}}
+                        </td>
+                        <td class="text-center">
+                            <span class="badge bg-success">
+                                <span data-feather="check" style="width:12px;height:12px;"></span>
+                            </span>
+                        </td>
+                    </tr>
+                    {{end}}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<p class="text-muted mt-3">
+    <small>{{.Framework.Description}}</small>
+</p>
+{{end}}
+
+{{define "scripts"}}
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    feather.replace();
+
+    // Filter functionality
+    const filterInput = document.getElementById('controlFilter');
+    const rows = document.querySelectorAll('.control-row');
+
+    filterInput.addEventListener('input', function() {
+        const filter = this.value.toLowerCase();
+        rows.forEach(row => {
+            const text = row.textContent.toLowerCase();
+            row.style.display = text.includes(filter) ? '' : 'none';
+        });
+    });
+});
+</script>
+{{end}}

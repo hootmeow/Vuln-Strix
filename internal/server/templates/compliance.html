@@ -1,0 +1,176 @@
+{{define "content"}}
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2">
+        <span data-feather="shield" class="me-2"></span>
+        Compliance Dashboard
+    </h1>
+</div>
+
+{{if .Disabled}}
+<div class="text-center py-5">
+    <span data-feather="shield-off" style="width:64px;height:64px;" class="text-muted mb-3"></span>
+    <h4>Compliance Module Disabled</h4>
+    <p class="text-muted">The compliance tracking feature is currently disabled.</p>
+    <a href="/admin" class="btn btn-primary">
+        <span data-feather="settings" class="me-1"></span>
+        Enable in Settings
+    </a>
+</div>
+{{else if .Frameworks}}
+<div class="row g-4">
+    {{range .Frameworks}}
+    <div class="col-md-6 col-lg-4">
+        <div class="card h-100 compliance-card" onclick="window.location='/compliance/{{.Framework.Code}}'">
+            <div class="card-header d-flex justify-content-between align-items-center" style="border-left: 4px solid {{.Framework.Color}}">
+                <div>
+                    <h5 class="mb-0">{{.Framework.Code}}</h5>
+                    <small class="text-muted">v{{.Framework.Version}}</small>
+                </div>
+                <div class="compliance-badge" style="background-color: {{.Framework.Color}}20; color: {{.Framework.Color}}">
+                    {{if .Stats}}{{printf "%.0f" .Stats.ComplianceRate}}%{{else}}N/A{{end}}
+                </div>
+            </div>
+            <div class="card-body">
+                <p class="card-text text-muted small">{{.Framework.Name}}</p>
+
+                {{if .Stats}}
+                <!-- Compliance Progress Bar -->
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between small mb-1">
+                        <span>Compliance Rate</span>
+                        <span>{{printf "%.0f" .Stats.ComplianceRate}}%</span>
+                    </div>
+                    <div class="progress" style="height: 8px;">
+                        <div class="progress-bar" role="progressbar"
+                             style="width: {{printf "%.0f" .Stats.ComplianceRate}}%; background-color: {{.Framework.Color}}">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="row text-center">
+                    <div class="col-4">
+                        <div class="stat-value">{{.Stats.TotalControls}}</div>
+                        <div class="stat-label">Controls</div>
+                    </div>
+                    <div class="col-4">
+                        <div class="stat-value text-warning">{{.Stats.ViolatedCount}}</div>
+                        <div class="stat-label">Violated</div>
+                    </div>
+                    <div class="col-4">
+                        <div class="stat-value text-danger">{{.Stats.CriticalGaps}}</div>
+                        <div class="stat-label">Critical</div>
+                    </div>
+                </div>
+                {{else}}
+                <div class="text-center text-muted py-3">
+                    <small>No data available</small>
+                </div>
+                {{end}}
+            </div>
+            <div class="card-footer bg-transparent">
+                <div class="d-flex justify-content-between">
+                    <a href="/compliance/{{.Framework.Code}}" class="btn btn-sm btn-outline-primary">
+                        View Controls
+                    </a>
+                    <a href="/compliance/{{.Framework.Code}}/gaps" class="btn btn-sm btn-outline-danger">
+                        <span data-feather="alert-triangle" style="width:14px;height:14px;"></span>
+                        Gap Analysis
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+    {{end}}
+</div>
+{{else}}
+<div class="text-center py-5">
+    <span data-feather="shield" style="width:64px;height:64px;" class="text-muted mb-3"></span>
+    <h4>No Compliance Frameworks</h4>
+    <p class="text-muted">Compliance frameworks will be loaded on first startup.</p>
+</div>
+{{end}}
+
+<!-- Summary Statistics -->
+{{if and (not .Disabled) .Frameworks}}
+<div class="row mt-5">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <span data-feather="pie-chart" class="me-2"></span>
+                Compliance Overview
+            </div>
+            <div class="card-body">
+                <div class="row text-center">
+                    {{range .Frameworks}}
+                    <div class="col">
+                        <div class="compliance-ring" style="--progress: {{if .Stats}}{{printf "%.0f" .Stats.ComplianceRate}}{{else}}0{{end}}; --color: {{.Framework.Color}}">
+                            <span class="compliance-ring-value">{{if .Stats}}{{printf "%.0f" .Stats.ComplianceRate}}%{{else}}N/A{{end}}</span>
+                        </div>
+                        <div class="mt-2 fw-medium">{{.Framework.Code}}</div>
+                    </div>
+                    {{end}}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{{end}}
+
+<style>
+.compliance-card {
+    cursor: pointer;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+.compliance-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+.compliance-badge {
+    font-size: 1.25rem;
+    font-weight: 600;
+    padding: 0.5rem 1rem;
+    border-radius: 8px;
+}
+.stat-value {
+    font-size: 1.5rem;
+    font-weight: 600;
+}
+.stat-label {
+    font-size: 0.75rem;
+    color: var(--bs-secondary);
+}
+.compliance-ring {
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    background: conic-gradient(var(--color) calc(var(--progress) * 1%), #e9ecef calc(var(--progress) * 1%));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto;
+    position: relative;
+}
+.compliance-ring::before {
+    content: '';
+    width: 60px;
+    height: 60px;
+    background: var(--bs-body-bg);
+    border-radius: 50%;
+    position: absolute;
+}
+.compliance-ring-value {
+    position: relative;
+    z-index: 1;
+    font-size: 0.875rem;
+    font-weight: 600;
+}
+</style>
+{{end}}
+
+{{define "scripts"}}
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    feather.replace();
+});
+</script>
+{{end}}

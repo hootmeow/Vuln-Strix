@@ -98,7 +98,24 @@
 </div>
 
 <div class="row">
-    <div class="col-12">
+    <div class="col-md-6">
+        <div class="card mb-4 border-secondary">
+            <div class="card-header bg-secondary text-white">Feature Toggles</div>
+            <div class="card-body">
+                <form action="/admin/settings" method="post">
+                    <div class="form-check form-switch mb-3">
+                        <input class="form-check-input" type="checkbox" id="compliance_enabled" name="compliance_enabled" value="true" {{if .ComplianceEnabled}}checked{{end}}>
+                        <label class="form-check-label" for="compliance_enabled">
+                            <strong>Compliance Module</strong>
+                            <br><small class="text-muted">Enable PCI-DSS, HIPAA, NIST, CIS compliance tracking</small>
+                        </label>
+                    </div>
+                    <button type="submit" class="btn btn-secondary">Save Features</button>
+                </form>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
         <div class="alert alert-info" role="alert">
             <h4 class="alert-heading">Application Info</h4>
             <p>Vuln-Strix v0.1.0-alpha</p>
@@ -108,7 +125,85 @@
     </div>
 </div>
 
+<div class="row">
+    <div class="col-12">
+        <div class="card mb-4 border-warning">
+            <div class="card-header bg-warning text-dark">
+                <span data-feather="trash-2" class="me-2"></span>
+                Clear Custom Data
+            </div>
+            <div class="card-body">
+                <p class="card-text">Selectively clear custom data. Check the items you want to remove.</p>
+                <form action="/admin/cleardata" method="post" onsubmit="return confirmClear()">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="form-check mb-2">
+                                <input class="form-check-input" type="checkbox" id="clear_groups" name="clear_groups" value="true">
+                                <label class="form-check-label" for="clear_groups">
+                                    <strong>Asset Groups</strong>
+                                    <br><small class="text-muted">Removes all custom groups and resets to defaults</small>
+                                </label>
+                            </div>
+                            <div class="form-check mb-2">
+                                <input class="form-check-input" type="checkbox" id="clear_settings" name="clear_settings" value="true">
+                                <label class="form-check-label" for="clear_settings">
+                                    <strong>Settings</strong>
+                                    <br><small class="text-muted">Resets SLA and feature settings to defaults</small>
+                                </label>
+                            </div>
+                            <div class="form-check mb-2">
+                                <input class="form-check-input" type="checkbox" id="clear_audit" name="clear_audit" value="true">
+                                <label class="form-check-label" for="clear_audit">
+                                    <strong>Audit Log</strong>
+                                    <br><small class="text-muted">Clears all audit log history</small>
+                                </label>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="form-check mb-2">
+                                <input class="form-check-input" type="checkbox" id="clear_filters" name="clear_filters" value="true">
+                                <label class="form-check-label" for="clear_filters">
+                                    <strong>Saved Filters</strong>
+                                    <br><small class="text-muted">Removes all saved search filters</small>
+                                </label>
+                            </div>
+                            <div class="form-check mb-2">
+                                <input class="form-check-input" type="checkbox" id="clear_search_history" name="clear_search_history" value="true">
+                                <label class="form-check-label" for="clear_search_history">
+                                    <strong>Search History</strong>
+                                    <br><small class="text-muted">Clears recent search history</small>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                    <hr>
+                    <button type="submit" class="btn btn-warning">
+                        <span data-feather="trash-2" class="me-1"></span>
+                        Clear Selected Data
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
+    // Initialize feather icons
+    if (typeof feather !== 'undefined') {
+        feather.replace();
+    }
+
+    // Confirm clear data
+    function confirmClear() {
+        const checkboxes = document.querySelectorAll('input[type="checkbox"]:checked');
+        if (checkboxes.length === 0) {
+            alert('Please select at least one item to clear.');
+            return false;
+        }
+        const items = Array.from(checkboxes).map(cb => cb.nextElementSibling.querySelector('strong').textContent);
+        return confirm('Are you sure you want to clear the following data?\n\n- ' + items.join('\n- ') + '\n\nThis action cannot be undone.');
+    }
+
     // Check for status query param to show alerts
     const urlParams = new URLSearchParams(window.location.search);
     const status = urlParams.get('status');
@@ -116,6 +211,10 @@
         alert('Database has been reset successfully.');
     } else if (status === 'generate_success') {
         alert('Sample data has been generated and ingested successfully.');
+    } else if (status === 'clear_success') {
+        alert('Selected data has been cleared successfully.');
+    } else if (status === 'settings_saved') {
+        alert('Settings have been saved successfully.');
     }
 </script>
 {{end}}

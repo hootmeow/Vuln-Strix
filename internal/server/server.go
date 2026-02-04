@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/hootmeow/Vuln-Strix/internal/auth"
@@ -21,12 +22,18 @@ import (
 	"github.com/hootmeow/Vuln-Strix/internal/storage"
 )
 
+type Breadcrumb struct {
+	Text   string
+	URL    string
+	Active bool
+}
+
 type Server struct {
-	store      storage.Store
-	cfg        *config.Config
-	tmpl       *template.Template
-	sessions   *auth.SessionManager
-	ldapAuth   *auth.LDAPAuthenticator
+	store    storage.Store
+	cfg      *config.Config
+	tmpl     *template.Template
+	sessions *auth.SessionManager
+	ldapAuth *auth.LDAPAuthenticator
 }
 
 func Start(store storage.Store, cfg *config.Config) error {
@@ -62,6 +69,7 @@ func Start(store storage.Store, cfg *config.Config) error {
 			a, _ := json.Marshal(v)
 			return template.JS(a)
 		},
+		"split": strings.Split,
 	}
 
 	// We must parse the base template with the FuncMap attached.
@@ -109,6 +117,7 @@ func Start(store storage.Store, cfg *config.Config) error {
 	mux.HandleFunc("POST /admin/reset", s.handleResetDB)
 	mux.HandleFunc("POST /admin/generate", s.handleGenerateData)
 	mux.HandleFunc("POST /admin/settings", s.handleSettings)
+	mux.HandleFunc("POST /admin/cleardata", s.handleClearData)
 	mux.HandleFunc("GET /reports", s.handleReports)
 	mux.HandleFunc("GET /analytics", s.handleAnalytics)
 	mux.HandleFunc("GET /reports/executive", s.handleExecutiveReport)
@@ -117,10 +126,42 @@ func Start(store storage.Store, cfg *config.Config) error {
 
 	// API / Action Routes (Batch 3)
 	mux.HandleFunc("POST /api/hosts/{id}/tags", s.handleAddTag)
+	mux.HandleFunc("POST /api/hosts/{id}/criticality", s.handleUpdateHostCriticality)
+	mux.HandleFunc("GET /admin/audit", s.handleAuditLogs)
 	mux.HandleFunc("DELETE /api/hosts/{id}/tags/{tag}", s.handleRemoveTag)
 	mux.HandleFunc("POST /api/findings/{id}/snooze", s.handleSnooze)
 	mux.HandleFunc("POST /api/findings/{id}/resolve", s.handleResolve)
 	mux.HandleFunc("POST /api/vulns/{id}/runbook", s.handleUpdateRunbook)
+
+	// Asset Groups
+	mux.HandleFunc("GET /groups", s.handleGroups)
+	mux.HandleFunc("GET /groups/{name}", s.handleGroupDetails)
+	mux.HandleFunc("POST /api/groups", s.handleCreateGroup)
+	mux.HandleFunc("PUT /api/groups/{id}", s.handleUpdateGroup)
+	mux.HandleFunc("DELETE /api/groups/{id}", s.handleDeleteGroup)
+	mux.HandleFunc("POST /api/hosts/{id}/group", s.handleAssignHostToGroup)
+
+	// Compliance Framework
+	mux.HandleFunc("GET /compliance", s.handleCompliance)
+	mux.HandleFunc("GET /compliance/{framework}", s.handleComplianceFramework)
+	mux.HandleFunc("GET /compliance/{framework}/gaps", s.handleComplianceGaps)
+	mux.HandleFunc("POST /api/compliance/mapping", s.handleCreateComplianceMapping)
+
+	// Enhanced Search
+	mux.HandleFunc("GET /search", s.handleSearchPage)
+	mux.HandleFunc("GET /api/search", s.handleSearchAPI)
+	mux.HandleFunc("GET /api/search/suggestions", s.handleSearchSuggestions)
+	mux.HandleFunc("POST /api/filters", s.handleSaveFilter)
+	mux.HandleFunc("GET /api/filters", s.handleGetFilters)
+
+	// Settings API
+	mux.HandleFunc("GET /api/settings/features", s.handleGetFeatureSettings)
+
+	// Historical Trending
+	mux.HandleFunc("GET /trending", s.handleTrending)
+	mux.HandleFunc("GET /api/trending/velocity", s.handleVelocityAPI)
+	mux.HandleFunc("GET /api/trending/mttr", s.handleMTTRAPI)
+	mux.HandleFunc("GET /api/trending/predict", s.handlePredictAPI)
 
 	// Wrap with auth middleware if enabled
 	var handler http.Handler = mux
@@ -184,6 +225,12 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Debug: check total findings by status
+	openCount, _ := s.store.GetFindingCountByStatus("Open")
+	fixedCount, _ := s.store.GetFindingCountByStatus("Fixed")
+	snoozedCount, _ := s.store.GetFindingCountByStatus("Snoozed")
+	log.Printf("Dashboard debug: Total findings - Open=%d, Fixed=%d, Snoozed=%d", openCount, fixedCount, snoozedCount)
+
 	crit, _ := s.store.GetVulnCount("Critical")
 	high, _ := s.store.GetVulnCount("High")
 	totalHosts, _ := s.store.GetHostCount()
@@ -193,9 +240,23 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Printf("Failed to fetch scans for dashboard: %v", err)
 	}
+	log.Printf("Dashboard: fetched %d scans", len(scans))
+	for i, sc := range scans {
+		if i < 3 { // Log first 3 for debugging
+			log.Printf("  Scan %d: %s, Critical=%d, High=%d, Medium=%d, Low=%d",
+				sc.ID, sc.Name, sc.CriticalCount, sc.HighCount, sc.MediumCount, sc.LowCount)
+		}
+	}
 
 	// Fetch Family Stats (Last 90 days)
-	familyStats, _ := s.store.GetFamilyStats(90)
+	familyStats, err := s.store.GetFamilyStats(90)
+	if err != nil {
+		log.Printf("Failed to fetch family stats: %v", err)
+	}
+	log.Printf("Dashboard: fetched %d family stats", len(familyStats))
+	for fam, count := range familyStats {
+		log.Printf("  Family: %s = %d", fam, count)
+	}
 
 	data := struct {
 		Stats struct {
@@ -205,6 +266,7 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		}
 		Scans       []models.Scan
 		FamilyStats map[string]int
+		Breadcrumbs []Breadcrumb
 	}{
 		Stats: struct {
 			Critical int64
@@ -217,6 +279,9 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		},
 		Scans:       scans,
 		FamilyStats: familyStats,
+		Breadcrumbs: []Breadcrumb{
+			{Text: "Home", URL: "/", Active: true},
+		},
 	}
 
 	s.render(w, "dashboard.html", data)
@@ -230,9 +295,14 @@ func (s *Server) handleHosts(w http.ResponseWriter, r *http.Request) {
 	}
 
 	data := struct {
-		Hosts []models.Host
+		Hosts       []models.Host
+		Breadcrumbs []Breadcrumb
 	}{
 		Hosts: hosts,
+		Breadcrumbs: []Breadcrumb{
+			{Text: "Home", URL: "/"},
+			{Text: "Hosts", URL: "/hosts", Active: true},
+		},
 	}
 
 	s.render(w, "hosts.html", data)
@@ -255,12 +325,23 @@ func (s *Server) handleHostDetails(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Get available groups for assignment dropdown
+	groups, _ := s.store.GetTagsByCategory("")
+
 	data := struct {
-		Host     *models.Host
-		Findings []models.Finding
+		Host        *models.Host
+		Findings    []models.Finding
+		Groups      []models.Tag
+		Breadcrumbs []Breadcrumb
 	}{
 		Host:     host,
 		Findings: findings,
+		Groups:   groups,
+		Breadcrumbs: []Breadcrumb{
+			{Text: "Home", URL: "/"},
+			{Text: "Hosts", URL: "/hosts"},
+			{Text: host.IP, URL: "#", Active: true},
+		},
 	}
 
 	s.render(w, "host_details.html", data)
@@ -298,9 +379,14 @@ func (s *Server) handleVulns(w http.ResponseWriter, r *http.Request) {
 	data := struct {
 		Vulns        []models.Vulnerability
 		GroupedVulns []VulnFamilyGroup
+		Breadcrumbs  []Breadcrumb
 	}{
 		Vulns:        vulns,
 		GroupedVulns: groupedVulns,
+		Breadcrumbs: []Breadcrumb{
+			{Text: "Home", URL: "/"},
+			{Text: "Vulnerabilities", URL: "/vulns", Active: true},
+		},
 	}
 
 	s.render(w, "vulns.html", data)
@@ -314,9 +400,14 @@ func (s *Server) handleScans(w http.ResponseWriter, r *http.Request) {
 	}
 
 	data := struct {
-		Scans []models.Scan
+		Scans       []models.Scan
+		Breadcrumbs []Breadcrumb
 	}{
 		Scans: scans,
+		Breadcrumbs: []Breadcrumb{
+			{Text: "Home", URL: "/"},
+			{Text: "Scans", URL: "/scans", Active: true},
+		},
 	}
 
 	s.render(w, "scans.html", data)
@@ -369,10 +460,20 @@ func (s *Server) render(w http.ResponseWriter, pageName string, data interface{}
 
 func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
 	sla := s.store.GetSLAConfig()
+	settings, _ := s.store.GetSettings()
+	complianceEnabled := settings["compliance_enabled"] == "true"
+
 	data := struct {
-		SLA map[string]int
+		SLA               map[string]int
+		ComplianceEnabled bool
+		Breadcrumbs       []Breadcrumb
 	}{
-		SLA: sla,
+		SLA:               sla,
+		ComplianceEnabled: complianceEnabled,
+		Breadcrumbs: []Breadcrumb{
+			{Text: "Home", URL: "/"},
+			{Text: "Admin", URL: "/admin", Active: true},
+		},
 	}
 	s.render(w, "admin.html", data)
 }
@@ -383,6 +484,7 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// SLA settings
 	for _, sev := range []string{"Critical", "High", "Medium", "Low"} {
 		key := "sla_" + sev
 		val := r.FormValue(key)
@@ -391,6 +493,12 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 				log.Printf("Failed to update setting %s: %v", key, err)
 			}
 		}
+	}
+
+	// Feature toggles
+	complianceEnabled := r.FormValue("compliance_enabled") == "true"
+	if err := s.store.UpdateSetting("compliance_enabled", fmt.Sprintf("%v", complianceEnabled)); err != nil {
+		log.Printf("Failed to update compliance_enabled: %v", err)
 	}
 
 	http.Redirect(w, r, "/admin?status=settings_saved", http.StatusSeeOther)
@@ -411,6 +519,77 @@ func (s *Server) handleResetDB(w http.ResponseWriter, r *http.Request) {
 	}
 
 	http.Redirect(w, r, "/admin?status=reset_success", http.StatusSeeOther)
+}
+
+func (s *Server) handleClearData(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Invalid form data", http.StatusBadRequest)
+		return
+	}
+
+	var cleared []string
+	var errors []string
+
+	// Clear custom groups if requested
+	if r.FormValue("clear_groups") == "true" {
+		if err := s.store.ClearCustomGroups(); err != nil {
+			log.Printf("Failed to clear groups: %v", err)
+			errors = append(errors, "groups")
+		} else {
+			cleared = append(cleared, "groups")
+			// Re-seed default groups
+			if err := s.store.SeedDefaultGroups(); err != nil {
+				log.Printf("Failed to re-seed groups: %v", err)
+			}
+		}
+	}
+
+	// Clear settings if requested
+	if r.FormValue("clear_settings") == "true" {
+		if err := s.store.ClearSettings(); err != nil {
+			log.Printf("Failed to clear settings: %v", err)
+			errors = append(errors, "settings")
+		} else {
+			cleared = append(cleared, "settings")
+		}
+	}
+
+	// Clear audit log if requested
+	if r.FormValue("clear_audit") == "true" {
+		if err := s.store.ClearAuditLog(); err != nil {
+			log.Printf("Failed to clear audit log: %v", err)
+			errors = append(errors, "audit log")
+		} else {
+			cleared = append(cleared, "audit log")
+		}
+	}
+
+	// Clear saved filters if requested
+	if r.FormValue("clear_filters") == "true" {
+		if err := s.store.ClearSavedFilters(); err != nil {
+			log.Printf("Failed to clear saved filters: %v", err)
+			errors = append(errors, "saved filters")
+		} else {
+			cleared = append(cleared, "saved filters")
+		}
+	}
+
+	// Clear search history if requested
+	if r.FormValue("clear_search_history") == "true" {
+		if err := s.store.ClearSearchHistory(); err != nil {
+			log.Printf("Failed to clear search history: %v", err)
+			errors = append(errors, "search history")
+		} else {
+			cleared = append(cleared, "search history")
+		}
+	}
+
+	// Log the action
+	if len(cleared) > 0 {
+		s.audit(r, "CLEAR_DATA", "admin", fmt.Sprintf("Cleared: %v", cleared))
+	}
+
+	http.Redirect(w, r, "/admin?status=clear_success", http.StatusSeeOther)
 }
 
 func (s *Server) handleGenerateData(w http.ResponseWriter, r *http.Request) {
@@ -448,11 +627,16 @@ func (s *Server) handleReports(w http.ResponseWriter, r *http.Request) {
 	scans, err := s.store.GetScans()
 	if err != nil || len(scans) < 2 {
 		data := struct {
-			CanCompare bool
-			Message    string
+			CanCompare  bool
+			Message     string
+			Breadcrumbs []Breadcrumb
 		}{
 			CanCompare: false,
 			Message:    "At least two scans are required for comparison reports.",
+			Breadcrumbs: []Breadcrumb{
+				{Text: "Home", URL: "/"},
+				{Text: "Reports", URL: "/reports", Active: true},
+			},
 		}
 		s.render(w, "reports.html", data)
 		return
@@ -474,6 +658,7 @@ func (s *Server) handleReports(w http.ResponseWriter, r *http.Request) {
 		MTTR        map[string]float64
 		SLABreaches []models.Finding
 		Message     string
+		Breadcrumbs []Breadcrumb
 	}{
 		CanCompare:  true,
 		Latest:      latest,
@@ -481,6 +666,10 @@ func (s *Server) handleReports(w http.ResponseWriter, r *http.Request) {
 		Aging:       aging,
 		MTTR:        mttr,
 		SLABreaches: slaBreaches,
+		Breadcrumbs: []Breadcrumb{
+			{Text: "Home", URL: "/"},
+			{Text: "Reports", URL: "/reports", Active: true},
+		},
 	}
 
 	s.render(w, "reports.html", data)
@@ -492,13 +681,18 @@ func (s *Server) handleAnalytics(w http.ResponseWriter, r *http.Request) {
 	cohorts, _ := s.store.GetAgingCohorts()
 
 	data := struct {
-		Ghosts  []models.Host
-		Zombies []models.Finding
-		Cohorts map[string]int64
+		Ghosts      []models.Host
+		Zombies     []models.Finding
+		Cohorts     map[string]int64
+		Breadcrumbs []Breadcrumb
 	}{
 		Ghosts:  ghosts,
 		Zombies: zombies,
 		Cohorts: cohorts,
+		Breadcrumbs: []Breadcrumb{
+			{Text: "Home", URL: "/"},
+			{Text: "Analytics", URL: "/analytics", Active: true},
+		},
 	}
 	s.render(w, "analytics.html", data)
 }
@@ -618,6 +812,7 @@ func (s *Server) handleExecutiveReport(w http.ResponseWriter, r *http.Request) {
 		TopRisky      []storage.HostRiskSummary
 		MTTR          string
 		SLA           string
+		Breadcrumbs   []Breadcrumb
 	}{
 		Date:          time.Now().Format("Jan 02, 2006"),
 		Days:          days,
@@ -629,6 +824,11 @@ func (s *Server) handleExecutiveReport(w http.ResponseWriter, r *http.Request) {
 		TopRisky:      topRisky,
 		MTTR:          fmt.Sprintf("%.1fd", mttrVal),
 		SLA:           fmt.Sprintf("%.0f%%", slaCompliance),
+		Breadcrumbs: []Breadcrumb{
+			{Text: "Home", URL: "/"},
+			{Text: "Reports", URL: "#"},
+			{Text: "Executive Brief", URL: "/reports/executive", Active: true},
+		},
 	}
 
 	s.render(w, "report_delta.html", data)
@@ -770,7 +970,24 @@ func (s *Server) handleScanDiff(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.render(w, "scan_diff.html", diff)
+	// Wrap diff in a struct if not already to add breadcrumbs.
+	// GetScanDiff returns a *models.DiffReport. We need to wrap it.
+	// Wait, previous code was `s.render(w, "scan_diff.html", diff)`.
+	// I need to change that to a struct wrapping diff and breadcrumbs.
+
+	data := struct {
+		Report      *models.DiffReport
+		Breadcrumbs []Breadcrumb
+	}{
+		Report: diff,
+		Breadcrumbs: []Breadcrumb{
+			{Text: "Home", URL: "/"},
+			{Text: "Scans", URL: "/scans"},
+			{Text: "Diff Report", URL: "#", Active: true},
+		},
+	}
+
+	s.render(w, "scan_diff.html", data)
 }
 
 func (s *Server) handleFindingsExport(w http.ResponseWriter, r *http.Request) {
@@ -798,6 +1015,7 @@ func (s *Server) handleFindingsExport(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte{0xEF, 0xBB, 0xBF})
 
 	// CSV Header
+	// ... (content truncated in view, so I will append handlers at the end of file instead of relying on context here)
 	fmt.Fprintln(w, "Hostname,IP,OS,Vulnerability,Family,Severity,Status,Solution,FirstSeen,LastSeen,Notes")
 
 	for _, f := range findings {
@@ -925,4 +1143,636 @@ func (s *Server) getCurrentUser(r *http.Request) *auth.User {
 		return nil
 	}
 	return session.User
+}
+
+func (s *Server) handleUpdateHostCriticality(w http.ResponseWriter, r *http.Request) {
+	idStr := r.PathValue("id")
+	var id uint
+	fmt.Sscanf(idStr, "%d", &id)
+
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Invalid form", http.StatusBadRequest)
+		return
+	}
+	criticality := r.FormValue("criticality")
+
+	if err := s.store.UpdateHostCriticality(id, criticality); err != nil {
+		http.Error(w, "Failed to update criticality", http.StatusInternalServerError)
+		return
+	}
+	s.audit(r, "UPDATE_CRITICALITY", fmt.Sprintf("Host ID: %d", id), fmt.Sprintf("Set to %s", criticality))
+
+	w.WriteHeader(http.StatusOK)
+}
+
+func (s *Server) handleAuditLogs(w http.ResponseWriter, r *http.Request) {
+	logs, err := s.store.GetAuditLogs(100)
+	if err != nil {
+		http.Error(w, "Database error", http.StatusInternalServerError)
+		return
+	}
+	data := struct {
+		Logs        []models.AuditLog
+		Breadcrumbs []Breadcrumb
+	}{
+		Logs: logs,
+		Breadcrumbs: []Breadcrumb{
+			{Text: "Home", URL: "/"},
+			{Text: "Audit Log", URL: "/admin/audit", Active: true},
+		},
+	}
+	s.render(w, "audit.html", data)
+}
+
+func (s *Server) audit(r *http.Request, action, target, details string) {
+	user := "System"
+	if u := s.getCurrentUser(r); u != nil {
+		user = u.Username
+	} else if s.cfg.Auth.Enabled == false {
+		user = "Anonymous"
+	}
+	ip := r.RemoteAddr
+
+	entry := &models.AuditLog{
+		User:      user,
+		Action:    action,
+		Target:    target,
+		Details:   details,
+		IPAddress: ip,
+	}
+	if err := s.store.CreateAuditLog(entry); err != nil {
+		log.Printf("Failed to create audit log: %v", err)
+	}
+}
+
+// ==================== Asset Groups Handlers ====================
+
+func (s *Server) handleGroups(w http.ResponseWriter, r *http.Request) {
+	groups, err := s.store.GetAssetGroups()
+	if err != nil {
+		log.Printf("Error fetching asset groups: %v", err)
+		http.Error(w, "Database error", http.StatusInternalServerError)
+		return
+	}
+
+	// Group by category
+	groupsByCategory := make(map[string][]storage.AssetGroup)
+	for _, g := range groups {
+		cat := string(g.Tag.Category)
+		groupsByCategory[cat] = append(groupsByCategory[cat], g)
+	}
+
+	data := struct {
+		GroupsByCategory map[string][]storage.AssetGroup
+		Breadcrumbs      []Breadcrumb
+	}{
+		GroupsByCategory: groupsByCategory,
+		Breadcrumbs: []Breadcrumb{
+			{Text: "Home", URL: "/"},
+			{Text: "Groups", URL: "/groups", Active: true},
+		},
+	}
+
+	s.render(w, "groups.html", data)
+}
+
+func (s *Server) handleGroupDetails(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+
+	hosts, err := s.store.GetHostsByTag(name)
+	if err != nil {
+		log.Printf("Error fetching hosts for group %s: %v", name, err)
+	}
+
+	stats, err := s.store.GetGroupStats(name)
+	if err != nil {
+		log.Printf("Error fetching stats for group %s: %v", name, err)
+		stats = &storage.GroupStats{}
+	}
+
+	findings, err := s.store.GetFindingsByTag(name)
+	if err != nil {
+		log.Printf("Error fetching findings for group %s: %v", name, err)
+	}
+
+	// Get the tag info
+	tags, _ := s.store.GetTagsByCategory("")
+	var groupTag models.Tag
+	for _, t := range tags {
+		if t.Name == name {
+			groupTag = t
+			break
+		}
+	}
+
+	data := struct {
+		Group struct {
+			Tag models.Tag
+		}
+		Hosts       []models.Host
+		Findings    []models.Finding
+		Stats       *storage.GroupStats
+		Breadcrumbs []Breadcrumb
+	}{
+		Group: struct{ Tag models.Tag }{Tag: groupTag},
+		Hosts:    hosts,
+		Findings: findings,
+		Stats:    stats,
+		Breadcrumbs: []Breadcrumb{
+			{Text: "Home", URL: "/"},
+			{Text: "Groups", URL: "/groups"},
+			{Text: name, URL: "#", Active: true},
+		},
+	}
+
+	s.render(w, "group_details.html", data)
+}
+
+func (s *Server) handleCreateGroup(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Invalid form", http.StatusBadRequest)
+		return
+	}
+
+	tag := &models.Tag{
+		Name:     r.FormValue("name"),
+		Category: models.TagCategory(r.FormValue("category")),
+		Color:    r.FormValue("color"),
+		Icon:     r.FormValue("icon"),
+	}
+
+	if err := s.store.CreateGroup(tag); err != nil {
+		log.Printf("Error creating group: %v", err)
+		http.Error(w, "Failed to create group", http.StatusInternalServerError)
+		return
+	}
+
+	s.audit(r, "CREATE_GROUP", tag.Name, fmt.Sprintf("Category: %s", tag.Category))
+	http.Redirect(w, r, "/groups", http.StatusSeeOther)
+}
+
+func (s *Server) handleUpdateGroup(w http.ResponseWriter, r *http.Request) {
+	idStr := r.PathValue("id")
+	var id uint
+	fmt.Sscanf(idStr, "%d", &id)
+
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Invalid form", http.StatusBadRequest)
+		return
+	}
+
+	name := r.FormValue("name")
+	color := r.FormValue("color")
+	icon := r.FormValue("icon")
+
+	if err := s.store.UpdateGroup(id, name, color, icon); err != nil {
+		log.Printf("Error updating group: %v", err)
+		http.Error(w, "Failed to update group", http.StatusInternalServerError)
+		return
+	}
+
+	s.audit(r, "UPDATE_GROUP", fmt.Sprintf("ID: %d", id), fmt.Sprintf("Name: %s", name))
+	w.WriteHeader(http.StatusOK)
+}
+
+func (s *Server) handleDeleteGroup(w http.ResponseWriter, r *http.Request) {
+	idStr := r.PathValue("id")
+	var id uint
+	fmt.Sscanf(idStr, "%d", &id)
+
+	// Get group name for audit
+	group, _ := s.store.GetGroupByID(id)
+	groupName := "Unknown"
+	if group != nil {
+		groupName = group.Name
+	}
+
+	if err := s.store.DeleteGroup(id); err != nil {
+		log.Printf("Error deleting group: %v", err)
+		http.Error(w, "Failed to delete group", http.StatusInternalServerError)
+		return
+	}
+
+	s.audit(r, "DELETE_GROUP", groupName, "")
+	w.WriteHeader(http.StatusOK)
+}
+
+func (s *Server) handleAssignHostToGroup(w http.ResponseWriter, r *http.Request) {
+	idStr := r.PathValue("id")
+	var id uint
+	fmt.Sscanf(idStr, "%d", &id)
+
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Invalid form", http.StatusBadRequest)
+		return
+	}
+
+	groupName := r.FormValue("group")
+	// Get the tag to find its color
+	tags, _ := s.store.GetTagsByCategory("")
+	color := "#0d6efd"
+	for _, t := range tags {
+		if t.Name == groupName {
+			color = t.Color
+			break
+		}
+	}
+
+	if err := s.store.AddHostTag(id, groupName, color); err != nil {
+		http.Error(w, "Failed to assign host to group", http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+}
+
+// ==================== Compliance Handlers ====================
+
+func (s *Server) handleCompliance(w http.ResponseWriter, r *http.Request) {
+	// Check if compliance is enabled
+	settings, _ := s.store.GetSettings()
+	if settings["compliance_enabled"] != "true" {
+		data := struct {
+			Disabled    bool
+			Breadcrumbs []Breadcrumb
+		}{
+			Disabled: true,
+			Breadcrumbs: []Breadcrumb{
+				{Text: "Home", URL: "/"},
+				{Text: "Compliance", URL: "/compliance", Active: true},
+			},
+		}
+		s.render(w, "compliance.html", data)
+		return
+	}
+
+	frameworks, err := s.store.GetComplianceFrameworks()
+	if err != nil {
+		log.Printf("Error fetching compliance frameworks: %v", err)
+	}
+
+	// Get stats for each framework
+	type FrameworkWithStats struct {
+		Framework models.ComplianceFramework
+		Stats     *storage.FrameworkStats
+	}
+	var frameworksWithStats []FrameworkWithStats
+
+	for _, fw := range frameworks {
+		stats, _ := s.store.GetFrameworkStats(fw.Code)
+		frameworksWithStats = append(frameworksWithStats, FrameworkWithStats{
+			Framework: fw,
+			Stats:     stats,
+		})
+	}
+
+	data := struct {
+		Frameworks  []FrameworkWithStats
+		Breadcrumbs []Breadcrumb
+	}{
+		Frameworks: frameworksWithStats,
+		Breadcrumbs: []Breadcrumb{
+			{Text: "Home", URL: "/"},
+			{Text: "Compliance", URL: "/compliance", Active: true},
+		},
+	}
+
+	s.render(w, "compliance.html", data)
+}
+
+func (s *Server) handleComplianceFramework(w http.ResponseWriter, r *http.Request) {
+	code := r.PathValue("framework")
+
+	frameworks, _ := s.store.GetComplianceFrameworks()
+	var framework models.ComplianceFramework
+	for _, fw := range frameworks {
+		if fw.Code == code {
+			framework = fw
+			break
+		}
+	}
+
+	controls, err := s.store.GetComplianceControls(framework.ID)
+	if err != nil {
+		log.Printf("Error fetching controls: %v", err)
+	}
+
+	stats, _ := s.store.GetFrameworkStats(code)
+
+	data := struct {
+		Framework   models.ComplianceFramework
+		Controls    []models.ComplianceControl
+		Stats       *storage.FrameworkStats
+		Breadcrumbs []Breadcrumb
+	}{
+		Framework: framework,
+		Controls:  controls,
+		Stats:     stats,
+		Breadcrumbs: []Breadcrumb{
+			{Text: "Home", URL: "/"},
+			{Text: "Compliance", URL: "/compliance"},
+			{Text: code, URL: "#", Active: true},
+		},
+	}
+
+	s.render(w, "compliance_framework.html", data)
+}
+
+func (s *Server) handleComplianceGaps(w http.ResponseWriter, r *http.Request) {
+	code := r.PathValue("framework")
+
+	gaps, err := s.store.GetComplianceGaps(code)
+	if err != nil {
+		log.Printf("Error fetching compliance gaps: %v", err)
+	}
+
+	frameworks, _ := s.store.GetComplianceFrameworks()
+	var framework models.ComplianceFramework
+	for _, fw := range frameworks {
+		if fw.Code == code {
+			framework = fw
+			break
+		}
+	}
+
+	data := struct {
+		Framework   models.ComplianceFramework
+		Gaps        []storage.ComplianceGap
+		Breadcrumbs []Breadcrumb
+	}{
+		Framework: framework,
+		Gaps:      gaps,
+		Breadcrumbs: []Breadcrumb{
+			{Text: "Home", URL: "/"},
+			{Text: "Compliance", URL: "/compliance"},
+			{Text: code, URL: fmt.Sprintf("/compliance/%s", code)},
+			{Text: "Gaps", URL: "#", Active: true},
+		},
+	}
+
+	s.render(w, "compliance_gaps.html", data)
+}
+
+func (s *Server) handleCreateComplianceMapping(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Invalid form", http.StatusBadRequest)
+		return
+	}
+
+	var vulnID, controlID uint
+	fmt.Sscanf(r.FormValue("vulnerability_id"), "%d", &vulnID)
+	fmt.Sscanf(r.FormValue("control_id"), "%d", &controlID)
+	source := r.FormValue("source")
+	if source == "" {
+		source = "Manual"
+	}
+
+	if err := s.store.CreateComplianceMapping(vulnID, controlID, source); err != nil {
+		http.Error(w, "Failed to create mapping", http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+}
+
+// ==================== Search Handlers ====================
+
+func (s *Server) handleSearchPage(w http.ResponseWriter, r *http.Request) {
+	filters, _ := s.store.GetSavedFilters()
+
+	data := struct {
+		SavedFilters []models.SavedFilter
+		Breadcrumbs  []Breadcrumb
+	}{
+		SavedFilters: filters,
+		Breadcrumbs: []Breadcrumb{
+			{Text: "Home", URL: "/"},
+			{Text: "Search", URL: "/search", Active: true},
+		},
+	}
+
+	s.render(w, "search.html", data)
+}
+
+func (s *Server) handleSearchAPI(w http.ResponseWriter, r *http.Request) {
+	query := r.URL.Query().Get("q")
+	limitStr := r.URL.Query().Get("limit")
+	limit := 50
+	if limitStr != "" {
+		fmt.Sscanf(limitStr, "%d", &limit)
+	}
+
+	// Parse filter DSL
+	criteria := parseFilterDSL(query)
+
+	results, err := s.store.GlobalSearch(criteria, limit)
+	if err != nil {
+		log.Printf("Search error: %v", err)
+		http.Error(w, "Search failed", http.StatusInternalServerError)
+		return
+	}
+
+	// Record search history
+	userID := "anonymous"
+	if u := s.getCurrentUser(r); u != nil {
+		userID = u.Username
+	}
+	s.store.AddSearchHistory(query, userID, len(results))
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(results)
+}
+
+func (s *Server) handleSearchSuggestions(w http.ResponseWriter, r *http.Request) {
+	prefix := r.URL.Query().Get("q")
+	suggestions, _ := s.store.GetSearchSuggestions(prefix, 10)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(suggestions)
+}
+
+func (s *Server) handleSaveFilter(w http.ResponseWriter, r *http.Request) {
+	var filter models.SavedFilter
+	if err := json.NewDecoder(r.Body).Decode(&filter); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	if err := s.store.CreateSavedFilter(&filter); err != nil {
+		http.Error(w, "Failed to save filter", http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(filter)
+}
+
+func (s *Server) handleGetFilters(w http.ResponseWriter, r *http.Request) {
+	filters, err := s.store.GetSavedFilters()
+	if err != nil {
+		http.Error(w, "Failed to get filters", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(filters)
+}
+
+// parseFilterDSL parses a filter DSL string into FilterCriteria
+func parseFilterDSL(query string) storage.FilterCriteria {
+	criteria := storage.FilterCriteria{
+		Query: query,
+	}
+
+	parts := strings.Fields(query)
+	var freeText []string
+
+	for _, part := range parts {
+		if strings.Contains(part, ":") {
+			kv := strings.SplitN(part, ":", 2)
+			key := strings.ToLower(kv[0])
+			value := kv[1]
+
+			switch key {
+			case "severity":
+				criteria.Severity = append(criteria.Severity, value)
+			case "status":
+				criteria.Status = append(criteria.Status, value)
+			case "tag":
+				criteria.Tags = append(criteria.Tags, value)
+			case "compliance":
+				criteria.Compliance = value
+			}
+		} else {
+			freeText = append(freeText, part)
+		}
+	}
+
+	if len(freeText) > 0 {
+		criteria.Query = strings.Join(freeText, " ")
+	} else {
+		criteria.Query = ""
+	}
+
+	return criteria
+}
+
+// ==================== Trending Handlers ====================
+
+func (s *Server) handleTrending(w http.ResponseWriter, r *http.Request) {
+	// Get velocity data for last 12 weeks
+	velocity, _ := s.store.GetVelocityMetrics(7, 12)
+
+	// Get MTTR trend
+	mttr, _ := s.store.GetMTTRTrend(90)
+
+	data := struct {
+		Velocity    []storage.VelocityMetric
+		MTTRTrend   []storage.MTTRTrend
+		Breadcrumbs []Breadcrumb
+	}{
+		Velocity:  velocity,
+		MTTRTrend: mttr,
+		Breadcrumbs: []Breadcrumb{
+			{Text: "Home", URL: "/"},
+			{Text: "Trending", URL: "/trending", Active: true},
+		},
+	}
+
+	s.render(w, "trending.html", data)
+}
+
+func (s *Server) handleVelocityAPI(w http.ResponseWriter, r *http.Request) {
+	periodStr := r.URL.Query().Get("period")
+	countStr := r.URL.Query().Get("count")
+
+	period := 7
+	count := 12
+	if periodStr != "" {
+		fmt.Sscanf(periodStr, "%d", &period)
+	}
+	if countStr != "" {
+		fmt.Sscanf(countStr, "%d", &count)
+	}
+
+	velocity, err := s.store.GetVelocityMetrics(period, count)
+	if err != nil {
+		http.Error(w, "Failed to get velocity data", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(velocity)
+}
+
+func (s *Server) handleMTTRAPI(w http.ResponseWriter, r *http.Request) {
+	daysStr := r.URL.Query().Get("days")
+	days := 90
+	if daysStr != "" {
+		fmt.Sscanf(daysStr, "%d", &days)
+	}
+
+	mttr, err := s.store.GetMTTRTrend(days)
+	if err != nil {
+		http.Error(w, "Failed to get MTTR data", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(mttr)
+}
+
+func (s *Server) handleGetFeatureSettings(w http.ResponseWriter, r *http.Request) {
+	settings, _ := s.store.GetSettings()
+	features := map[string]bool{
+		"compliance_enabled": settings["compliance_enabled"] == "true",
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(features)
+}
+
+func (s *Server) handlePredictAPI(w http.ResponseWriter, r *http.Request) {
+	// Simple linear regression prediction for open findings
+	snapshots, err := s.store.GetMetricSnapshots("open_findings", 30)
+	if err != nil || len(snapshots) < 2 {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"prediction": nil,
+			"message":    "Insufficient data for prediction",
+		})
+		return
+	}
+
+	// Calculate linear regression
+	n := float64(len(snapshots))
+	var sumX, sumY, sumXY, sumX2 float64
+	for i, s := range snapshots {
+		x := float64(i)
+		y := s.Value
+		sumX += x
+		sumY += y
+		sumXY += x * y
+		sumX2 += x * x
+	}
+
+	slope := (n*sumXY - sumX*sumY) / (n*sumX2 - sumX*sumX)
+	intercept := (sumY - slope*sumX) / n
+
+	// Predict next 7 days
+	predictions := make([]map[string]interface{}, 7)
+	lastX := float64(len(snapshots) - 1)
+	for i := 0; i < 7; i++ {
+		x := lastX + float64(i+1)
+		predictions[i] = map[string]interface{}{
+			"day":   i + 1,
+			"value": slope*x + intercept,
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"slope":       slope,
+		"intercept":   intercept,
+		"predictions": predictions,
+	})
 }

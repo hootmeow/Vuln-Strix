@@ -50,6 +50,13 @@ func (s *SQLiteStore) AutoMigrate() error {
 		&models.Scan{},
 		&models.Tag{},
 		&Setting{},
+		&models.AuditLog{},
+		&models.ComplianceFramework{},
+		&models.ComplianceControl{},
+		&models.VulnerabilityComplianceMapping{},
+		&models.SavedFilter{},
+		&models.SearchHistory{},
+		&models.MetricSnapshot{},
 	)
 }
 
@@ -172,6 +179,13 @@ func (s *SQLiteStore) GetVulnCount(severity string) (int64, error) {
 		Joins("join vulnerabilities on vulnerabilities.id = findings.vulnerability_id").
 		Where("vulnerabilities.severity = ? AND findings.status = ?", severity, "Open").
 		Count(&count).Error
+	log.Printf("GetVulnCount(%s): count=%d, err=%v", severity, count, err)
+	return count, err
+}
+
+func (s *SQLiteStore) GetFindingCountByStatus(status string) (int64, error) {
+	var count int64
+	err := s.db.Model(&models.Finding{}).Where("status = ?", status).Count(&count).Error
 	return count, err
 }
 
@@ -183,11 +197,25 @@ func (s *SQLiteStore) GetHosts() ([]models.Host, error) {
 
 func (s *SQLiteStore) GetHost(id uint) (*models.Host, error) {
 	var host models.Host
-	err := s.db.Preload("Scans").First(&host, id).Error
+	err := s.db.Preload("Scans").Preload("Tags").First(&host, id).Error
 	if err != nil {
 		return nil, err
 	}
 	return &host, nil
+}
+
+func (s *SQLiteStore) UpdateHostCriticality(id uint, criticality string) error {
+	return s.db.Model(&models.Host{}).Where("id = ?", id).Update("criticality", criticality).Error
+}
+
+func (s *SQLiteStore) CreateAuditLog(entry *models.AuditLog) error {
+	return s.db.Create(entry).Error
+}
+
+func (s *SQLiteStore) GetAuditLogs(limit int) ([]models.AuditLog, error) {
+	var logs []models.AuditLog
+	err := s.db.Order("created_at desc").Limit(limit).Find(&logs).Error
+	return logs, err
 }
 
 func (s *SQLiteStore) GetVulnerabilities() ([]models.Vulnerability, error) {
@@ -392,6 +420,39 @@ func (s *SQLiteStore) ResetDB() error {
 	}
 
 	return nil
+}
+
+// ClearCustomGroups deletes all custom tags/groups (including host associations)
+func (s *SQLiteStore) ClearCustomGroups() error {
+	// First remove all host-tag associations
+	if err := s.db.Exec("DELETE FROM host_tags").Error; err != nil {
+		return err
+	}
+	// Then delete all tags
+	if err := s.db.Exec("DELETE FROM tags").Error; err != nil {
+		return err
+	}
+	return nil
+}
+
+// ClearAuditLog deletes all audit log entries
+func (s *SQLiteStore) ClearAuditLog() error {
+	return s.db.Exec("DELETE FROM audit_logs").Error
+}
+
+// ClearSettings resets all settings to defaults by deleting them
+func (s *SQLiteStore) ClearSettings() error {
+	return s.db.Exec("DELETE FROM settings").Error
+}
+
+// ClearSavedFilters deletes all saved search filters
+func (s *SQLiteStore) ClearSavedFilters() error {
+	return s.db.Exec("DELETE FROM saved_filters").Error
+}
+
+// ClearSearchHistory deletes all search history
+func (s *SQLiteStore) ClearSearchHistory() error {
+	return s.db.Exec("DELETE FROM search_histories").Error
 }
 
 func (s *SQLiteStore) GetGhostHosts(days int) ([]models.Host, error) {

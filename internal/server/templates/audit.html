@@ -1,0 +1,46 @@
+{{define "content"}}
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2">Audit Log</h1>
+    <div class="btn-toolbar mb-2 mb-md-0">
+        <div class="btn-group me-2">
+            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="location.reload()">Refresh</button>
+        </div>
+    </div>
+</div>
+
+<div class="card shadow-sm border-0">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover table-striped mb-0 text-small">
+                <thead>
+                    <tr>
+                        <th>Time</th>
+                        <th>User</th>
+                        <th>Action</th>
+                        <th>Target</th>
+                        <th>Details</th>
+                        <th>IP Address</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {{range .Logs}}
+                    <tr>
+                        <td class="text-nowrap">{{.CreatedAt.Format "2006-01-02 15:04:05"}}</td>
+                        <td class="fw-bold">{{.User}}</td>
+                        <td><span class="badge bg-secondary">{{.Action}}</span></td>
+                        <td class="text-truncate" style="max-width: 200px;" title="{{.Target}}">{{.Target}}</td>
+                        <td class="text-truncate" style="max-width: 300px;" title="{{.Details}}">{{.Details}}</td>
+                        <td class="text-muted font-monospace">{{.IPAddress}}</td>
+                    </tr>
+                    {{end}}
+                    {{if not .Logs}}
+                    <tr>
+                        <td colspan="6" class="text-center py-4 text-muted">No audit logs found.</td>
+                    </tr>
+                    {{end}}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{{end}}

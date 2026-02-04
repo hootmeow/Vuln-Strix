@@ -29,7 +29,7 @@ Since we are using SQLite, we need a C compiler.
 
 1.  Open your terminal (PowerShell) and navigate to the project directory:
     ```powershell
-    cd c:\Users\david.saunders\Documents\GitHub\Vuln-Strix\Vuln-Strix
+    cd c:\Users\YOUR_USER\Documents\GitHub\Vuln-Strix
     ```
 2.  Download project dependencies:
     ```powershell

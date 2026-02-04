@@ -128,80 +128,100 @@
 
         // --- Trend Chart with Gradient ---
         const rawScans = {{ .Scans | json }};
-        const scans = rawScans ? rawScans.map(s => ({
-            date: new Date(s.ScanStart).toISOString().split('T')[0],
-            count: (s.CriticalCount || 0) + (s.HighCount || 0) + (s.MediumCount || 0) + (s.LowCount || 0),
-            critical: s.CriticalCount || 0,
-            high: s.HighCount || 0
-        })) : [];
+        const scans = (rawScans || []).filter(s => s.ScanStart).map(s => {
+            const d = new Date(s.ScanStart);
+            // Check if date is valid
+            if (isNaN(d.getTime())) {
+                console.warn('Invalid scan date:', s.ScanStart);
+                return null;
+            }
+            return {
+                date: d.toISOString().split('T')[0],
+                count: (s.CriticalCount || 0) + (s.HighCount || 0) + (s.MediumCount || 0) + (s.LowCount || 0),
+                critical: s.CriticalCount || 0,
+                high: s.HighCount || 0
+            };
+        }).filter(s => s !== null);
 
         scans.sort((a, b) => new Date(a.date) - new Date(b.date));
         const trendLabels = scans.map(s => s.date);
         const trendData = scans.map(s => s.count);
 
+        console.log('Dashboard Debug - Scans:', scans);
+        console.log('Dashboard Debug - Trend Labels:', trendLabels);
+        console.log('Dashboard Debug - Trend Data:', trendData);
+
         const ctxTrend = document.getElementById('trendChart');
         if (ctxTrend) {
-            const ctx = ctxTrend.getContext('2d');
-            const gradient = ctx.createLinearGradient(0, 0, 0, 300);
-            gradient.addColorStop(0, 'rgba(13, 110, 253, 0.3)');
-            gradient.addColorStop(1, 'rgba(13, 110, 253, 0.0)');
+            if (scans.length === 0) {
+                // Show empty state
+                ctxTrend.parentElement.innerHTML = '<div class="text-center text-muted py-5"><span data-feather="inbox" style="width:48px;height:48px;"></span><p class="mt-2 mb-0">No scan data available</p><small>Import a Nessus file to see trends</small></div>';
+                feather.replace();
+            } else {
+                const ctx = ctxTrend.getContext('2d');
+                const gradient = ctx.createLinearGradient(0, 0, 0, 300);
+                gradient.addColorStop(0, 'rgba(13, 110, 253, 0.3)');
+                gradient.addColorStop(1, 'rgba(13, 110, 253, 0.0)');
 
-            new Chart(ctxTrend, {
-                type: 'line',
-                data: {
-                    labels: trendLabels,
-                    datasets: [{
-                        label: 'Total Vulnerabilities',
-                        data: trendData,
-                        borderColor: '#0d6efd',
-                        backgroundColor: gradient,
-                        fill: true,
-                        tension: 0.4,
-                        borderWidth: 2,
-                        pointRadius: 4,
-                        pointBackgroundColor: '#0d6efd',
-                        pointBorderColor: isDark ? '#2c3034' : '#ffffff',
-                        pointBorderWidth: 2,
-                        pointHoverRadius: 6
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    interaction: {
-                        intersect: false,
-                        mode: 'index'
+                new Chart(ctxTrend, {
+                    type: 'line',
+                    data: {
+                        labels: trendLabels,
+                        datasets: [{
+                            label: 'Total Vulnerabilities',
+                            data: trendData,
+                            borderColor: '#0d6efd',
+                            backgroundColor: gradient,
+                            fill: true,
+                            tension: 0.4,
+                            borderWidth: 2,
+                            pointRadius: 4,
+                            pointBackgroundColor: '#0d6efd',
+                            pointBorderColor: isDark ? '#2c3034' : '#ffffff',
+                            pointBorderWidth: 2,
+                            pointHoverRadius: 6
+                        }]
                     },
-                    plugins: {
-                        legend: { display: false },
-                        tooltip: {
-                            backgroundColor: isDark ? '#2c3034' : '#ffffff',
-                            titleColor: isDark ? '#e9ecef' : '#212529',
-                            bodyColor: isDark ? '#adb5bd' : '#6c757d',
-                            borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)',
-                            borderWidth: 1,
-                            padding: 12,
-                            cornerRadius: 8
-                        }
-                    },
-                    scales: {
-                        y: {
-                            beginAtZero: true,
-                            grid: { color: gridColor },
-                            ticks: { color: textColor }
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        interaction: {
+                            intersect: false,
+                            mode: 'index'
                         },
-                        x: {
-                            grid: { display: false },
-                            ticks: { color: textColor }
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: {
+                                backgroundColor: isDark ? '#2c3034' : '#ffffff',
+                                titleColor: isDark ? '#e9ecef' : '#212529',
+                                bodyColor: isDark ? '#adb5bd' : '#6c757d',
+                                borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)',
+                                borderWidth: 1,
+                                padding: 12,
+                                cornerRadius: 8
+                            }
+                        },
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                grid: { color: gridColor },
+                                ticks: { color: textColor }
+                            },
+                            x: {
+                                grid: { display: false },
+                                ticks: { color: textColor }
+                            }
                         }
                     }
-                }
-            });
+                });
+            }
         }
 
         // --- Family Donut Chart ---
         const familyStats = {{ .FamilyStats | json }};
         const families = [];
+
+        console.log('Dashboard Debug - FamilyStats:', familyStats);
 
         if (familyStats) {
             for (const [name, count] of Object.entries(familyStats)) {
@@ -216,6 +236,9 @@
         const famData = topFamilies.map(f => f.count);
         const totalFamilyCount = famData.reduce((a, b) => a + b, 0);
 
+        console.log('Dashboard Debug - Top Families:', topFamilies);
+        console.log('Dashboard Debug - Total Family Count:', totalFamilyCount);
+
         // Update donut center
         const donutCenter = document.getElementById('donutCenter');
         if (donutCenter) {
@@ -224,45 +247,51 @@
 
         const ctxFam = document.getElementById('familyChart');
         if (ctxFam) {
-            new Chart(ctxFam, {
-                type: 'doughnut',
-                data: {
-                    labels: famLabels,
-                    datasets: [{
-                        data: famData,
-                        backgroundColor: [
-                            '#dc3545', '#fd7e14', '#ffc107', '#0d6efd', '#6c757d'
-                        ],
-                        borderWidth: 0,
-                        hoverOffset: 8
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    cutout: '70%',
-                    plugins: {
-                        legend: {
-                            position: 'bottom',
-                            labels: {
-                                color: textColor,
-                                padding: 15,
-                                usePointStyle: true,
-                                pointStyle: 'circle'
+            if (families.length === 0) {
+                // Show empty state
+                ctxFam.parentElement.innerHTML = '<div class="text-center text-muted py-5"><span data-feather="pie-chart" style="width:48px;height:48px;"></span><p class="mt-2 mb-0">No vulnerability families found</p><small>Import scans to see risk distribution</small></div>';
+                feather.replace();
+            } else {
+                new Chart(ctxFam, {
+                    type: 'doughnut',
+                    data: {
+                        labels: famLabels,
+                        datasets: [{
+                            data: famData,
+                            backgroundColor: [
+                                '#dc3545', '#fd7e14', '#ffc107', '#0d6efd', '#6c757d'
+                            ],
+                            borderWidth: 0,
+                            hoverOffset: 8
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        cutout: '70%',
+                        plugins: {
+                            legend: {
+                                position: 'bottom',
+                                labels: {
+                                    color: textColor,
+                                    padding: 15,
+                                    usePointStyle: true,
+                                    pointStyle: 'circle'
+                                }
+                            },
+                            tooltip: {
+                                backgroundColor: isDark ? '#2c3034' : '#ffffff',
+                                titleColor: isDark ? '#e9ecef' : '#212529',
+                                bodyColor: isDark ? '#adb5bd' : '#6c757d',
+                                borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)',
+                                borderWidth: 1,
+                                padding: 12,
+                                cornerRadius: 8
                             }
-                        },
-                        tooltip: {
-                            backgroundColor: isDark ? '#2c3034' : '#ffffff',
-                            titleColor: isDark ? '#e9ecef' : '#212529',
-                            bodyColor: isDark ? '#adb5bd' : '#6c757d',
-                            borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)',
-                            borderWidth: 1,
-                            padding: 12,
-                            cornerRadius: 8
                         }
                     }
-                }
-            });
+                });
+            }
         }
     });
 </script>

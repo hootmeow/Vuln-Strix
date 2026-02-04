@@ -1,0 +1,158 @@
+{{define "content"}}
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2">
+        <span class="badge me-2" style="background-color: {{.Group.Tag.Color}}">
+            <span data-feather="{{if .Group.Tag.Icon}}{{.Group.Tag.Icon}}{{else}}folder{{end}}"></span>
+        </span>
+        {{.Group.Tag.Name}}
+        <small class="text-muted fs-6">{{.Group.Tag.Category}}</small>
+    </h1>
+    <div class="btn-toolbar">
+        <a href="/groups" class="btn btn-outline-secondary btn-sm">
+            <span data-feather="arrow-left" class="me-1"></span>
+            Back to Groups
+        </a>
+    </div>
+</div>
+
+<!-- Stats Cards -->
+<div class="row g-4 mb-4">
+    <div class="col-md-3">
+        <div class="card bg-danger bg-opacity-10 border-danger">
+            <div class="card-body text-center">
+                <div class="fs-2 fw-bold text-danger">{{.Stats.CriticalCount}}</div>
+                <div class="text-muted">Critical</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-warning bg-opacity-10 border-warning">
+            <div class="card-body text-center">
+                <div class="fs-2 fw-bold text-warning">{{.Stats.HighCount}}</div>
+                <div class="text-muted">High</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-info bg-opacity-10 border-info">
+            <div class="card-body text-center">
+                <div class="fs-2 fw-bold text-info">{{.Stats.MediumCount}}</div>
+                <div class="text-muted">Medium</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-secondary bg-opacity-10 border-secondary">
+            <div class="card-body text-center">
+                <div class="fs-2 fw-bold text-secondary">{{.Stats.LowCount}}</div>
+                <div class="text-muted">Low</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4">
+    <!-- Hosts in Group -->
+    <div class="col-lg-5">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span>
+                    <span data-feather="server" class="me-2"></span>
+                    Hosts ({{len .Hosts}})
+                </span>
+            </div>
+            <div class="card-body p-0">
+                {{if .Hosts}}
+                <div class="list-group list-group-flush" style="max-height: 400px; overflow-y: auto;">
+                    {{range .Hosts}}
+                    <a href="/hosts/{{.ID}}" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center">
+                        <div>
+                            <div class="fw-medium">{{if .Hostname}}{{.Hostname}}{{else}}{{.IP}}{{end}}</div>
+                            <small class="text-muted">{{.IP}}</small>
+                        </div>
+                        <span class="badge bg-{{if eq .Criticality "High"}}danger{{else if eq .Criticality "Medium"}}warning{{else}}secondary{{end}}">
+                            {{.Criticality}}
+                        </span>
+                    </a>
+                    {{end}}
+                </div>
+                {{else}}
+                <div class="text-center py-4 text-muted">
+                    <span data-feather="server" style="width:32px;height:32px;" class="mb-2"></span>
+                    <p class="mb-0">No hosts in this group</p>
+                    <small>Assign hosts from the host details page</small>
+                </div>
+                {{end}}
+            </div>
+        </div>
+    </div>
+
+    <!-- Open Findings -->
+    <div class="col-lg-7">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span>
+                    <span data-feather="alert-circle" class="me-2"></span>
+                    Open Findings ({{.Stats.OpenFindings}})
+                </span>
+                <a href="/export/findings?tag={{.Group.Tag.Name}}" class="btn btn-sm btn-outline-secondary">
+                    <span data-feather="download" style="width:14px;height:14px;"></span>
+                    Export
+                </a>
+            </div>
+            <div class="card-body p-0">
+                {{if .Findings}}
+                <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
+                    <table class="table table-hover mb-0">
+                        <thead class="sticky-top bg-body">
+                            <tr>
+                                <th>Severity</th>
+                                <th>Vulnerability</th>
+                                <th>Host</th>
+                                <th>Age</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {{range .Findings}}
+                            <tr>
+                                <td>
+                                    <span class="badge bg-{{if eq .Vuln.Severity "Critical"}}danger{{else if eq .Vuln.Severity "High"}}warning{{else if eq .Vuln.Severity "Medium"}}info{{else}}secondary{{end}}">
+                                        {{.Vuln.Severity}}
+                                    </span>
+                                </td>
+                                <td>
+                                    <div class="text-truncate" style="max-width: 250px;" title="{{.Vuln.Name}}">
+                                        {{.Vuln.Name}}
+                                    </div>
+                                </td>
+                                <td>
+                                    <a href="/hosts/{{.HostID}}">{{.Host.IP}}</a>
+                                </td>
+                                <td>
+                                    <span class="text-muted">{{.FirstSeen.Format "Jan 02"}}</span>
+                                </td>
+                            </tr>
+                            {{end}}
+                        </tbody>
+                    </table>
+                </div>
+                {{else}}
+                <div class="text-center py-4 text-muted">
+                    <span data-feather="check-circle" style="width:32px;height:32px;" class="text-success mb-2"></span>
+                    <p class="mb-0">No open findings</p>
+                    <small>All vulnerabilities have been resolved</small>
+                </div>
+                {{end}}
+            </div>
+        </div>
+    </div>
+</div>
+{{end}}
+
+{{define "scripts"}}
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    feather.replace();
+});
+</script>
+{{end}}

@@ -33,6 +33,17 @@
                         data-bs-toggle="modal" data-bs-target="#addTagModal">+ Tag</button>
                 </div>
 
+                <!-- Group Assignment -->
+                <div class="mb-3">
+                    <label class="form-label fw-bold small text-muted">Assign to Group:</label>
+                    <select class="form-select form-select-sm" id="groupSelect" onchange="assignToGroup()">
+                        <option value="">-- Select Group --</option>
+                        {{range .Groups}}
+                        <option value="{{.Name}}" style="color: {{.Color}}">{{.Name}} ({{.Category}})</option>
+                        {{end}}
+                    </select>
+                </div>
+
                 <div class="row mb-2">
                     <div class="col-sm-4 fw-bold">Hostname:</div>
                     <div class="col-sm-8">{{.Host.Hostname}}</div>
@@ -40,6 +51,22 @@
                 <div class="row mb-2">
                     <div class="col-sm-4 fw-bold">OS:</div>
                     <div class="col-sm-8">{{.Host.OS}}</div>
+                </div>
+                <div class="row mb-2 align-items-center">
+                    <div class="col-sm-4 fw-bold">Criticality:</div>
+                    <div class="col-sm-8">
+                        <select class="form-select form-select-sm border-0 bg-light fw-bold" id="criticalitySelect"
+                            onchange="updateCriticality()" style="width: auto; display: inline-block; cursor: pointer;">
+                            <option value="Critical" {{if eq .Host.Criticality "Critical" }}selected{{end}}
+                                class="text-danger">Critical</option>
+                            <option value="High" {{if eq .Host.Criticality "High" }}selected{{end}}
+                                class="text-warning">High</option>
+                            <option value="Medium" {{if eq .Host.Criticality "Medium" }}selected{{end}}
+                                class="text-info">Medium</option>
+                            <option value="Low" {{if eq .Host.Criticality "Low" }}selected{{end}} class="text-success">
+                                Low</option>
+                        </select>
+                    </div>
                 </div>
                 <div class="row mb-2">
                     <div class="col-sm-4 fw-bold">Last Seen:</div>
@@ -155,6 +182,7 @@
                                 <th>Severity</th>
                                 <th>Plugin ID</th>
                                 <th>Name</th>
+                                <th>Refs</th>
                                 <th>Family</th>
                                 <th>Port/Protocol</th>
                                 <th>First Seen</th>
@@ -169,6 +197,8 @@
                                 <td><a href="https://www.tenable.com/plugins/nessus/{{.Vuln.PluginID}}" target="_blank"
                                         class="text-decoration-none">{{.Vuln.PluginID}}</a></td>
                                 <td>{{.Vuln.Name}}</td>
+                                <td>{{if .Vuln.Compliance}}<small class="text-muted">{{.Vuln.Compliance}}</small>{{end}}
+                                </td>
                                 <td><span class="badge bg-light text-dark border">{{.Vuln.Family}}</span></td>
                                 <td><span class="font-monospace small">{{.Port}}/{{.Protocol}}</span></td>
                                 <td class="small">{{.FirstSeen.Format "2006-01-02"}}</td>
@@ -193,6 +223,7 @@
                                 <th>Severity</th>
                                 <th>Plugin ID</th>
                                 <th>Name</th>
+                                <th>Refs</th>
                                 <th>Remediated Date</th>
                                 <th>Resolution Note</th>
                             </tr>
@@ -205,8 +236,13 @@
                                 <td><a href="https://www.tenable.com/plugins/nessus/{{.Vuln.PluginID}}" target="_blank"
                                         class="text-decoration-none">{{.Vuln.PluginID}}</a></td>
                                 <td>{{.Vuln.Name}}</td>
-                                <td class="small text-success fw-bold">{{if not .FixedAt.IsZero}}{{.FixedAt.Format "2006-01-02"}}{{else}}{{.LastSeen.Format "2006-01-02"}}{{end}}</td>
-                                <td class="small">{{if .ResolutionNote}}<span class="text-info">{{.ResolutionNote}}</span>{{else}}<span class="text-muted fst-italic">Auto-detected</span>{{end}}</td>
+                                <td>{{if .Vuln.Compliance}}<small class="text-muted">{{.Vuln.Compliance}}</small>{{end}}
+                                </td>
+                                <td class="small text-success fw-bold">{{if not .FixedAt.IsZero}}{{.FixedAt.Format
+                                    "2006-01-02"}}{{else}}{{.LastSeen.Format "2006-01-02"}}{{end}}</td>
+                                <td class="small">{{if .ResolutionNote}}<span
+                                        class="text-info">{{.ResolutionNote}}</span>{{else}}<span
+                                        class="text-muted fst-italic">Auto-detected</span>{{end}}</td>
                             </tr>
                             {{end}}
                             {{end}}
@@ -222,6 +258,7 @@
                                 <th>Severity</th>
                                 <th>Plugin ID</th>
                                 <th>Name</th>
+                                <th>Refs</th>
                                 <th>Risk Accepted Until</th>
                                 <th>Reason</th>
                             </tr>
@@ -234,8 +271,14 @@
                                 <td><a href="https://www.tenable.com/plugins/nessus/{{.Vuln.PluginID}}" target="_blank"
                                         class="text-decoration-none">{{.Vuln.PluginID}}</a></td>
                                 <td>{{.Vuln.Name}}</td>
-                                <td><span class="font-monospace small text-warning">{{if .SnoozedUntil}}{{.SnoozedUntil.Format "2006-01-02"}}{{else}}N/A{{end}}</span></td>
-                                <td class="small">{{if .ExceptionReason}}<span class="text-info">{{.ExceptionReason}}</span>{{else}}<span class="text-muted fst-italic">No reason provided</span>{{end}}</td>
+                                <td>{{if .Vuln.Compliance}}<small class="text-muted">{{.Vuln.Compliance}}</small>{{end}}
+                                </td>
+                                <td><span class="font-monospace small text-warning">{{if
+                                        .SnoozedUntil}}{{.SnoozedUntil.Format "2006-01-02"}}{{else}}N/A{{end}}</span>
+                                </td>
+                                <td class="small">{{if .ExceptionReason}}<span
+                                        class="text-info">{{.ExceptionReason}}</span>{{else}}<span
+                                        class="text-muted fst-italic">No reason provided</span>{{end}}</td>
                             </tr>
                             {{end}}
                             {{end}}
@@ -524,5 +567,34 @@
             }
         }
     });
+
+    function updateCriticality() {
+        const hostId = document.getElementById('hostIdField').value;
+        const newVal = document.getElementById('criticalitySelect').value;
+        fetch('/api/hosts/' + hostId + '/criticality', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: 'criticality=' + newVal
+        }).then(res => {
+            if (!res.ok) alert('Failed to update criticality');
+        });
+    }
+
+    function assignToGroup() {
+        const hostId = document.getElementById('hostIdField').value;
+        const groupName = document.getElementById('groupSelect').value;
+        if (!groupName) return;
+        fetch('/api/hosts/' + hostId + '/group', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: 'group=' + encodeURIComponent(groupName)
+        }).then(res => {
+            if (res.ok) {
+                location.reload();
+            } else {
+                alert('Failed to assign to group');
+            }
+        });
+    }
 </script>
 {{end}}
