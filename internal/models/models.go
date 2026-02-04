@@ -92,3 +92,17 @@ type Finding struct {
 	// Manual Resolution
 	ResolutionNote string `json:"resolution_note"`
 }
+
+// DiffReport represents the comparison between two scans or timeframes.
+type DiffReport struct {
+	BaseScanID   uint      `json:"base_scan_id"`
+	TargetScanID uint      `json:"target_scan_id"`
+	New          []Finding `json:"new"`
+	Fixed        []Finding `json:"fixed"`
+	Regressed    []Finding `json:"regressed"`
+	Stats        struct {
+		NewCount       int `json:"new_count"`
+		FixedCount     int `json:"fixed_count"`
+		RegressedCount int `json:"regressed_count"`
+	} `json:"stats"`
+}

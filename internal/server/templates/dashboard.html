@@ -31,64 +31,53 @@
 </div>
 
 <div class="row mt-4">
-    <div class="col-12">
-        <div class="card">
+    <div class="col-md-8">
+        <div class="card h-100">
             <div class="card-header">
                 Vulnerability Trends (Last 6 Months)
             </div>
             <div class="card-body">
-                <canvas id="trendChart" height="100"></canvas>
+                <canvas id="trendChart" height="250"></canvas>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card h-100">
+            <div class="card-header">
+                Top Risk Families
+            </div>
+            <div class="card-body">
+                <canvas id="familyChart" height="250"></canvas>
             </div>
         </div>
     </div>
 </div>
 
-<div class="row mt-4">
-    <div class="col-12">
-        <div class="card">
-            <div class="card-header">
-                Upload Scan (.nessus)
-            </div>
-            <div class="card-body">
-                <form action="/upload" method="post" enctype="multipart/form-data">
-                    <div class="mb-3">
-                        <label for="scanfile" class="form-label">Nessus XML File</label>
-                        <input class="form-control" type="file" id="scanfile" name="scanfile" required>
-                    </div>
-                    <button type="submit" class="btn btn-success">Upload & Ingest</button>
-                </form>
-            </div>
-        </div>
-    </div>
-</div>
+<!-- Upload moved to Settings/Admin -->
 
 <script>
     document.addEventListener("DOMContentLoaded", function () {
-        // Parse Scan Data from Go Template
-        const scans = [
-            {{ range .Scans }}
-            {
-            date: "{{.ScanStart.Format "2006-01-02"}}",
-            count: {{.CriticalCount }} + {{.HighCount }} + {{.MediumCount }} + {{.LowCount }}
-            },
-        {{ end }}
-        ];
+        // --- Trend Chart ---
+        const rawScans = {{ .Scans | json
+    }};
+    const scans = rawScans ? rawScans.map(s => ({
+        date: new Date(s.ScanStart).toISOString().split('T')[0],
+        count: (s.CriticalCount || 0) + (s.HighCount || 0) + (s.MediumCount || 0) + (s.LowCount || 0)
+    })) : [];
 
-    // Sort by date (if not already)
     scans.sort((a, b) => new Date(a.date) - new Date(b.date));
+    const trendLabels = scans.map(s => s.date);
+    const trendData = scans.map(s => s.count);
 
-    const labels = scans.map(s => s.date);
-    const data = scans.map(s => s.count);
-
-    const ctx = document.getElementById('trendChart');
-    if (ctx) {
-        new Chart(ctx, {
+    const ctxTrend = document.getElementById('trendChart');
+    if (ctxTrend) {
+        new Chart(ctxTrend, {
             type: 'line',
             data: {
-                labels: labels,
+                labels: trendLabels,
                 datasets: [{
                     label: 'Total Vulnerabilities',
-                    data: data,
+                    data: trendData,
                     borderColor: '#0d6efd',
                     backgroundColor: 'rgba(13, 110, 253, 0.1)',
                     fill: true,
@@ -97,15 +86,50 @@
             },
             options: {
                 responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: { y: { beginAtZero: true } }
+            }
+        });
+    }
+
+    // --- Family Chart ---
+    const familyStats = {{ .FamilyStats | json }};
+    const families = [];
+
+    // Convert Map to Array {name, count}
+    if (familyStats) {
+        for (const [name, count] of Object.entries(familyStats)) {
+            families.push({ name: name, count: count });
+        }
+    }
+
+    // Sort by count desc and take top 5
+    families.sort((a, b) => b.count - a.count);
+    const topFamilies = families.slice(0, 5);
+
+    const famLabels = topFamilies.map(f => f.name);
+    const famData = topFamilies.map(f => f.count);
+
+    const ctxFam = document.getElementById('familyChart');
+    if (ctxFam) {
+        new Chart(ctxFam, {
+            type: 'doughnut',
+            data: {
+                labels: famLabels,
+                datasets: [{
+                    data: famData,
+                    backgroundColor: [
+                        '#dc3545', '#fd7e14', '#ffc107', '#0d6efd', '#6c757d'
+                    ],
+                    hoverOffset: 4
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
                 plugins: {
-                    legend: {
-                        display: true
-                    }
-                },
-                scales: {
-                    y: {
-                        beginAtZero: true
-                    }
+                    legend: { position: 'bottom' }
                 }
             }
         });

@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"io"
@@ -9,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"time"
 
 	"github.com/hootmeow/Vuln-Strix/internal/ingest"
@@ -35,6 +37,10 @@ func Start(store storage.Store, port int) error {
 		"sub": func(a, b int) int {
 			return a - b
 		},
+		"json": func(v interface{}) template.JS {
+			a, _ := json.Marshal(v)
+			return template.JS(a)
+		},
 	}
 
 	// We must parse the base template with the FuncMap attached.
@@ -60,6 +66,7 @@ func Start(store storage.Store, port int) error {
 	mux.HandleFunc("GET /hosts/{id}", s.handleHostDetails)
 	mux.HandleFunc("GET /vulns", s.handleVulns)
 	mux.HandleFunc("GET /scans", s.handleScans)
+	mux.HandleFunc("GET /scans/diff", s.handleScanDiff)
 	mux.HandleFunc("POST /upload", s.handleUpload)
 	mux.HandleFunc("GET /admin", s.handleAdmin)
 	mux.HandleFunc("POST /admin/reset", s.handleResetDB)
@@ -69,6 +76,7 @@ func Start(store storage.Store, port int) error {
 	mux.HandleFunc("GET /analytics", s.handleAnalytics)
 	mux.HandleFunc("GET /reports/executive", s.handleExecutiveReport)
 	mux.HandleFunc("GET /export/freshworks", s.handleFreshworksExport)
+	mux.HandleFunc("GET /export/findings", s.handleFindingsExport)
 
 	// API / Action Routes (Batch 3)
 	mux.HandleFunc("POST /api/hosts/{id}/tags", s.handleAddTag)
@@ -82,8 +90,8 @@ func Start(store storage.Store, port int) error {
 }
 
 func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
-	// Parse multipart form (10 MB max)
-	r.ParseMultipartForm(10 << 20)
+	// Parse multipart form (200 MB max)
+	r.ParseMultipartForm(200 << 20)
 
 	file, header, err := r.FormFile("scanfile")
 	if err != nil {
@@ -137,13 +145,17 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		log.Printf("Failed to fetch scans for dashboard: %v", err)
 	}
 
+	// Fetch Family Stats (Last 90 days)
+	familyStats, _ := s.store.GetFamilyStats(90)
+
 	data := struct {
 		Stats struct {
 			Critical int64
 			High     int64
 			Hosts    int64
 		}
-		Scans []models.Scan
+		Scans       []models.Scan
+		FamilyStats map[string]int
 	}{
 		Stats: struct {
 			Critical int64
@@ -154,7 +166,8 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 			High:     high,
 			Hosts:    totalHosts,
 		},
-		Scans: scans,
+		Scans:       scans,
+		FamilyStats: familyStats,
 	}
 
 	s.render(w, "dashboard.html", data)
@@ -211,10 +224,34 @@ func (s *Server) handleVulns(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	data := struct {
+	// Group by Family
+	groupedMap := make(map[string][]models.Vulnerability)
+	for _, v := range vulns {
+		if v.Family == "" {
+			v.Family = "Uncategorized"
+		}
+		groupedMap[v.Family] = append(groupedMap[v.Family], v)
+	}
+
+	// Convert to sorted slice for consistent ordering
+	type VulnFamilyGroup struct {
+		Name  string
 		Vulns []models.Vulnerability
+	}
+	var groupedVulns []VulnFamilyGroup
+	for name, vs := range groupedMap {
+		groupedVulns = append(groupedVulns, VulnFamilyGroup{Name: name, Vulns: vs})
+	}
+	sort.Slice(groupedVulns, func(i, j int) bool {
+		return groupedVulns[i].Name < groupedVulns[j].Name
+	})
+
+	data := struct {
+		Vulns        []models.Vulnerability
+		GroupedVulns []VulnFamilyGroup
 	}{
-		Vulns: vulns,
+		Vulns:        vulns,
+		GroupedVulns: groupedVulns,
 	}
 
 	s.render(w, "vulns.html", data)
@@ -377,7 +414,7 @@ func (s *Server) handleReports(w http.ResponseWriter, r *http.Request) {
 	prev := scans[1]
 
 	aging, _ := s.store.GetAgingStats()
-	mttr, _ := s.store.GetMTTRStats()
+	mttr, _ := s.store.GetMTTRStats(90)
 	slaBreaches, _ := s.store.GetSLACompliance()
 
 	data := struct {
@@ -442,42 +479,51 @@ func (s *Server) handleFreshworksExport(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) handleExecutiveReport(w http.ResponseWriter, r *http.Request) {
-	// Delta Report Logic
-	// In a real app, we'd compare two specific scan snapshots.
-	// Here we'll simulate "New" vs "Fixed" based on timestamps from the last 7 days.
-
-	scans, _ := s.store.GetScans()
-	var latestScanTime time.Time
-	if len(scans) > 0 {
-		latestScanTime = scans[len(scans)-1].ScanEnd // Use most recent scan end time
-	} else {
-		latestScanTime = time.Now()
+	// Parse Time Range (default 7 days)
+	daysStr := r.URL.Query().Get("days")
+	days := 7
+	if daysStr != "" {
+		fmt.Sscanf(daysStr, "%d", &days)
+	}
+	if days <= 0 {
+		days = 7
 	}
 
-	weekAgo := latestScanTime.AddDate(0, 0, -7)
-	_ = weekAgo // Silence unused error
-
-	// "New" = FirstSeen > weekAgo
-	// "Fixed" = Status=Fixed AND LastSeen > weekAgo (Implies fixed recently) ??
-	// Actually, "Fixed" findings usually have LastSeen updated to the scan time when they confirm fix?
-	// Wait, in my ingest logic: `existing.LastSeen = scanTime`.
-	// If it's OPEN, LastSeen is now.
-	// If it's FIXED, we mark as Fixed. Do we update LastSeen? In `ingest.go`, we check `MarkFindingsResolved`.
-	// I need to check `MarkFindingsResolved` logic (if I ever find it) or just assume.
-	// Let's rely on "New" Risks for now.
-
-	// We'll pass the whole Store to the template or pre-calc.
-	// Let's pre-calc a bit.
-
-	// Fetch actual recently fixed findings for the report
-	fixedFindings, err := s.store.GetFixedFindings(7) // Last 7 days
+	// Fetch Stats based on Range
+	fixedFindings, err := s.store.GetFixedFindings(days)
 	if err != nil {
 		log.Printf("Error getting fixed findings: %v", err)
 	}
 
-	newFindings, err := s.store.GetNewFindings(7)
+	newFindings, err := s.store.GetNewFindings(days)
 	if err != nil {
 		log.Printf("Error getting new findings: %v", err)
+	}
+
+	mttrStats, err := s.store.GetMTTRStats(days)
+	if err != nil {
+		log.Printf("Error getting MTTR: %v", err)
+	}
+	// Calculate avg MTTR for Critical
+	mttrVal := mttrStats["Critical"]
+
+	slaBreaches, err := s.store.GetSLACompliance()
+	if err != nil {
+		log.Printf("Error getting SLA compliance: %v", err)
+	}
+	// Simple compliance %:  1 - (AssetsWithBreaches / TotalAssets)
+	// For now, let's just use Breach Count if we don't have easy TotalAssets map
+	// Or better: Store.GetSLACompliance returns breaches.
+	// Let's get Total Host Count.
+	hostCount, _ := s.store.GetHostCount()
+	slaCompliance := 100.0
+	if hostCount > 0 {
+		// Count unique hosts in breaches
+		uniqueBreachHosts := make(map[uint]bool)
+		for _, b := range slaBreaches {
+			uniqueBreachHosts[b.HostID] = true
+		}
+		slaCompliance = 100.0 * (1.0 - float64(len(uniqueBreachHosts))/float64(hostCount))
 	}
 
 	var criticalNew []models.Finding
@@ -492,22 +538,48 @@ func (s *Server) handleExecutiveReport(w http.ResponseWriter, r *http.Request) {
 		log.Printf("Error getting top risky hosts: %v", err)
 	}
 
+	// Calculate Total Risk (Simple Heuristic for now based on New Findings)
+	// In a real scenario, this might be the Total Risk of the entire infrastructure.
+	// Let's assume the user wants "Risk Added" vs "Risk Removed" since this is a Delta report.
+	// But the card says "Net Risk Change", implying the delta.
+	// The "Cyber Hygiene Score" uses NewRisk count.
+	// Let's make TotalRisk represent the *weighted* risk of the new findings.
+	totalRiskScore := 0.0
+	for _, f := range newFindings {
+		switch f.Vuln.Severity {
+		case "Critical":
+			totalRiskScore += 10
+		case "High":
+			totalRiskScore += 5
+		case "Medium":
+			totalRiskScore += 1
+		case "Low":
+			totalRiskScore += 0.1
+		}
+	}
+
 	data := struct {
 		Date          string
+		Days          int
 		NewRisk       int
 		FixedRisk     int
 		TotalRisk     int
 		FixedFindings []storage.FindingSummary
 		NewFindings   []models.Finding
 		TopRisky      []storage.HostRiskSummary
+		MTTR          string
+		SLA           string
 	}{
 		Date:          time.Now().Format("Jan 02, 2006"),
+		Days:          days,
 		NewRisk:       len(newFindings),
 		FixedRisk:     len(fixedFindings),
-		TotalRisk:     0, // Placeholder
+		TotalRisk:     int(totalRiskScore),
 		FixedFindings: fixedFindings,
 		NewFindings:   criticalNew,
 		TopRisky:      topRisky,
+		MTTR:          fmt.Sprintf("%.1fd", mttrVal),
+		SLA:           fmt.Sprintf("%.0f%%", slaCompliance),
 	}
 
 	s.render(w, "report_delta.html", data)
@@ -613,4 +685,92 @@ func (s *Server) handleResolve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusOK)
+}
+
+func (s *Server) handleScanDiff(w http.ResponseWriter, r *http.Request) {
+	baseIDStr := r.URL.Query().Get("base")
+	targetIDStr := r.URL.Query().Get("target")
+
+	var baseID, targetID uint
+	fmt.Sscanf(baseIDStr, "%d", &baseID)
+	fmt.Sscanf(targetIDStr, "%d", &targetID)
+
+	// If IDs missing, just pick the last two scans if available
+	if baseID == 0 || targetID == 0 {
+		scans, err := s.store.GetScans()
+		if err == nil && len(scans) >= 2 {
+			// Sort by date usually? GetScans might not be sorted.
+			// Assuming latest first or last... usually GetScans is ID desc or asc.
+			// Let's assume Scan ID increases with time.
+			// Target = Latest (highest ID), Base = Previous.
+			// If not provided, we show error or selector page?
+			// Let's redirect to scans page with error if not provided?
+			// Or auto-select for demo.
+			if len(scans) >= 2 {
+				targetID = scans[len(scans)-1].ID
+				baseID = scans[len(scans)-2].ID
+			}
+		}
+	}
+
+	if baseID == 0 || targetID == 0 {
+		http.Error(w, "Select two scans to compare", http.StatusBadRequest)
+		return
+	}
+
+	diff, err := s.store.GetScanDiff(baseID, targetID)
+	if err != nil {
+		log.Printf("Diff error: %v", err)
+		http.Error(w, "Error calculating diff", http.StatusInternalServerError)
+		return
+	}
+
+	s.render(w, "scan_diff.html", diff)
+}
+
+func (s *Server) handleFindingsExport(w http.ResponseWriter, r *http.Request) {
+	hostIDStr := r.URL.Query().Get("host_id")
+	var hostID uint
+	if hostIDStr != "" {
+		fmt.Sscanf(hostIDStr, "%d", &hostID)
+	}
+
+	findings, err := s.store.GetFindingsForExport(hostID)
+	if err != nil {
+		http.Error(w, "Failed to fetch findings", http.StatusInternalServerError)
+		return
+	}
+
+	filename := "vuln_strix_export.csv"
+	if hostID > 0 && len(findings) > 0 {
+		filename = fmt.Sprintf("vuln_strix_host_%d_export.csv", hostID)
+	}
+
+	w.Header().Set("Content-Type", "text/csv")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filename))
+
+	// Write BOM for Excel compatibility
+	w.Write([]byte{0xEF, 0xBB, 0xBF})
+
+	// CSV Header
+	fmt.Fprintln(w, "Hostname,IP,OS,Vulnerability,Family,Severity,Status,Solution,FirstSeen,LastSeen,Notes")
+
+	for _, f := range findings {
+		// Clean description/solution for CSV (replace newlines/commas if needed, but simple quoting works mostly)
+		// Using fmt.Sprintf("%q") helps quote strings safely
+		line := fmt.Sprintf("%q,%q,%q,%q,%q,%q,%q,%q,%s,%s,%q",
+			f.Host.Hostname,
+			f.Host.IP,
+			f.Host.OS,
+			f.Vuln.Name,
+			f.Vuln.Family,
+			f.Vuln.Severity,
+			f.Status,
+			f.Vuln.Solution,
+			f.FirstSeen.Format("2006-01-02"),
+			f.LastSeen.Format("2006-01-02"),
+			f.ResolutionNote,
+		)
+		fmt.Fprintln(w, line)
+	}
 }

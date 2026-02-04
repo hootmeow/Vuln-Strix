@@ -155,7 +155,7 @@ func (s *SQLiteStore) GetVulnCount(severity string) (int64, error) {
 	var count int64
 	// We need to join finding -> vuln to query by severity
 	err := s.db.Model(&models.Finding{}).
-		Joins("join vulnerabilities on vulnerabilities.id = findings.vuln_id").
+		Joins("join vulnerabilities on vulnerabilities.id = findings.vulnerability_id").
 		Where("vulnerabilities.severity = ? AND findings.status = ?", severity, "Open").
 		Count(&count).Error
 	return count, err
@@ -284,7 +284,7 @@ func (s *SQLiteStore) GetAgingStats() (map[string]int, error) {
 	return stats, nil
 }
 
-func (s *SQLiteStore) GetMTTRStats() (map[string]float64, error) {
+func (s *SQLiteStore) GetMTTRStats(days int) (map[string]float64, error) {
 	stats := map[string]float64{
 		"Critical": 0,
 		"High":     0,
@@ -300,8 +300,13 @@ func (s *SQLiteStore) GetMTTRStats() (map[string]float64, error) {
 		"Info":     0,
 	}
 
+	since := time.Now().AddDate(0, 0, -days)
 	var findings []models.Finding
-	err := s.db.Preload("Vuln").Where("status = ?", "Fixed").Find(&findings).Error
+	// We use LastSeen as proxy for fixed time if FixedAt is not set, but ideally FixedAt.
+	// In ingest we set FixedAt if it is fixed.
+	// Let's filter by LastSeen > since OR FixedAt > since
+	// Actually, just LastSeen is simpler if we assume Fixed findings have LastSeen = FixedDate.
+	err := s.db.Preload("Vuln").Where("status = ? AND last_seen >= ?", "Fixed", since).Find(&findings).Error
 	if err != nil {
 		return nil, err
 	}

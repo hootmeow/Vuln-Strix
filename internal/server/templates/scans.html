@@ -3,34 +3,35 @@
     <h1 class="h2">Scan History</h1>
 </div>
 
-<div class="mb-3">
+<div class="mb-3 d-flex gap-2">
     <input type="text" id="scanSearch" class="form-control" placeholder="Search scans by Name or Policy..."
         onkeyup="filterScans()">
+    <button id="compareBtn" class="btn btn-primary" disabled onclick="compareScans()">Compare Selected (0)</button>
 </div>
 
 <div class="table-responsive">
     <table class="table table-striped table-sm" id="scansTable">
         <thead>
             <tr>
+                <th scope="col" width="50">Select</th>
                 <th>Name</th>
                 <th>Scan Date</th>
                 <th>Policy</th>
-                <th>Hosts</th>
                 <th>Stats (C/H/M/L)</th>
             </tr>
         </thead>
         <tbody>
             {{range .Scans}}
             <tr>
+                <td><input type="checkbox" class="form-check-input scan-select" value="{{.ID}}"
+                        onchange="updateCompareBtn()"></td>
                 <td>{{.Name}}</td>
-                <td>{{.ScanStart.Format "2006-01-02 15:04"}} - {{.ScanEnd.Format "15:04"}}</td>
+                <td>{{.ScanStart.Format "2006-01-02 15:04"}} <small class="text-muted">(- {{.ScanEnd.Format
+                        "15:04"}})</small></td>
                 <td>
                     {{.PolicyName}}<br>
                     <small class="text-muted">{{.PluginSet}}</small>
                 </td>
-                <!-- We don't have host count on Scan object directly yet, maybe add later or computed on ingest? 
-                     Using raw stats for now -->
-                <td>-</td>
                 <td>
                     <span class="badge bg-danger">{{.CriticalCount}}</span>
                     <span class="badge bg-warning text-dark">{{.HighCount}}</span>
@@ -44,6 +45,33 @@
 </div>
 
 <script>
+    function updateCompareBtn() {
+        const checked = document.querySelectorAll('.scan-select:checked');
+        const btn = document.getElementById('compareBtn');
+        btn.innerText = `Compare Selected (${checked.length})`;
+
+        if (checked.length === 2) {
+            btn.disabled = false;
+        } else {
+            btn.disabled = true;
+        }
+    }
+
+    function compareScans() {
+        const checked = document.querySelectorAll('.scan-select:checked');
+        if (checked.length !== 2) return;
+
+        // Determine Base (older) and Target (newer)
+        // We assume IDs increase with time, so min ID is Base.
+        const id1 = parseInt(checked[0].value);
+        const id2 = parseInt(checked[1].value);
+
+        const base = Math.min(id1, id2);
+        const target = Math.max(id1, id2);
+
+        window.location.href = `/scans/diff?base=${base}&target=${target}`;
+    }
+
     function filterScans() {
         var input, filter, table, tr, td, i, txtValue;
         input = document.getElementById("scanSearch");
@@ -51,16 +79,16 @@
         table = document.getElementById("scansTable");
         tr = table.getElementsByTagName("tr");
         for (i = 0; i < tr.length; i++) {
-            // Check Name and Policy columns (Indices 0, 2)
+            // Check Name and Policy columns (Indices 1, 3 because of checkbox at 0)
             var found = false;
             // Name
-            td = tr[i].getElementsByTagName("td")[0];
+            td = tr[i].getElementsByTagName("td")[1];
             if (td) {
                 txtValue = td.textContent || td.innerText;
                 if (txtValue.toUpperCase().indexOf(filter) > -1) found = true;
             }
             // Policy
-            td = tr[i].getElementsByTagName("td")[2];
+            td = tr[i].getElementsByTagName("td")[3];
             if (td && !found) {
                 txtValue = td.textContent || td.innerText;
                 if (txtValue.toUpperCase().indexOf(filter) > -1) found = true;

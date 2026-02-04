@@ -8,10 +8,10 @@
     }
 
     .metric-card {
-        background: white;
+        background: var(--bs-tertiary-bg);
         border-radius: 8px;
         box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
-        border: 1px solid #eee;
+        border: 1px solid var(--bs-border-color);
         transition: transform 0.2s;
     }
 
@@ -23,7 +23,7 @@
         text-transform: uppercase;
         letter-spacing: 0.5px;
         font-size: 0.85rem;
-        color: #6c757d;
+        color: var(--bs-secondary-color);
         font-weight: 600;
         margin-bottom: 0.5rem;
     }
@@ -37,20 +37,21 @@
 
     .metric-subtitle {
         font-size: 0.85rem;
-        color: #adb5bd;
+        color: var(--bs-secondary-color);
     }
 
     .section-title {
         font-size: 1.25rem;
         font-weight: 600;
-        color: #343a40;
+        color: var(--bs-body-color);
         margin-bottom: 1rem;
         border-left: 4px solid #0d6efd;
         padding-left: 1rem;
     }
 
     .table-custom th {
-        background-color: #f8f9fa;
+        background-color: var(--bs-tertiary-bg);
+        color: var(--bs-body-color);
         text-transform: uppercase;
         font-size: 0.75rem;
         letter-spacing: 1px;
@@ -61,13 +62,19 @@
         padding: 0.35em 0.65em;
     }
 
+    .scorecard-card {
+        background: var(--bs-tertiary-bg);
+    }
+
     @media print {
         body {
             background: white;
             -webkit-print-color-adjust: exact;
         }
 
-        .metric-card {
+        .metric-card,
+        .scorecard-card {
+            background: white !important;
             box-shadow: none;
             border: 1px solid #ddd;
         }
@@ -88,9 +95,57 @@
         <p class="text-muted mb-0">Risk Intelligence Snapshot &bull; {{ .Date }}</p>
     </div>
     <div class="text-end">
+        <div class="btn-group me-2" role="group" aria-label="Time Range">
+            <a href="?days=7" class="btn btn-outline-secondary {{if eq .Days 7}}active{{end}}">Past Week</a>
+            <a href="?days=30" class="btn btn-outline-secondary {{if eq .Days 30}}active{{end}}">Past Month</a>
+            <a href="?days=90" class="btn btn-outline-secondary {{if eq .Days 90}}active{{end}}">Past Quarter</a>
+        </div>
         <button onclick="window.print()" class="btn btn-outline-primary btn-print">
             <i class="bi bi-printer"></i> Download PDF
         </button>
+    </div>
+</div>
+
+<!-- Strategic Scorecard -->
+<div class="card mb-5 border-0 shadow-sm scorecard-card">
+    <div class="card-body p-4">
+        <div class="row text-center">
+            <div class="col-md-3 border-end">
+                <h6 class="text-uppercase text-muted small fw-bold ls-1">Cyber Hygiene Score</h6>
+                <!-- Pseudo-calculation: 100 - (NewRisk * 2) - (TotalRisk/100) -->
+                {{ $score := sub 100 .NewRisk }}
+                {{ if lt $score 0 }}{{ $score = 0 }}{{ end }}
+                <div
+                    class="display-4 fw-bold {{if gt $score 80}}text-success{{else if gt $score 60}}text-warning{{else}}text-danger{{end}}">
+                    {{$score}}
+                </div>
+                <!-- Tooltip or info icon could go here to explain calc -->
+                <div class="small text-muted" title="Score = 100 - New Critical Findings">Target: >85</div>
+            </div>
+            <div class="col-md-3 border-end">
+                <h6 class="text-uppercase text-muted small fw-bold ls-1">MTTR Trend</h6>
+                <div class="display-4 fw-bold text-success">
+                    <i class="bi bi-arrow-down-right"></i> {{.MTTR}}
+                </div>
+                <div class="small text-muted">Avg time to fix Criticals</div>
+            </div>
+            <div class="col-md-3 border-end">
+                <h6 class="text-uppercase text-muted small fw-bold ls-1">SLA Compliance</h6>
+                <div class="display-4 fw-bold text-warning">
+                    {{.SLA}}
+                </div>
+                <!-- <div class="small text-muted">3 assets at risk of breach</div> -->
+                <div class="small text-muted">Global Asset Compliance</div>
+            </div>
+            <div class="col-md-3">
+                <h6 class="text-uppercase text-muted small fw-bold ls-1">Risk Velocity</h6>
+                <div class="display-4 fw-bold {{if gt .NewRisk .FixedRisk}}text-danger{{else}}text-success{{end}}">
+                    {{if gt .NewRisk .FixedRisk}}<i class="bi bi-graph-up-arrow"></i>{{else}}<i
+                        class="bi bi-graph-down-arrow"></i>{{end}}
+                </div>
+                <div class="small text-muted">{{if gt .NewRisk .FixedRisk}}Accelerating{{else}}Decelerating{{end}}</div>
+            </div>
+        </div>
     </div>
 </div>
 
@@ -100,7 +155,7 @@
         <div class="metric-card p-4">
             <div class="metric-title">New High/Critical Risks</div>
             <div class="metric-value text-danger">+{{ .NewRisk }}</div>
-            <div class="metric-subtitle">Since last 7 days</div>
+            <div class="metric-subtitle">Since last {{.Days}} days</div>
         </div>
     </div>
     <div class="col-md-4">

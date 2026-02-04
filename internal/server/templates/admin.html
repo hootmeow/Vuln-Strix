@@ -30,6 +30,24 @@
         </div>
     </div>
 </div>
+
+<div class="row">
+    <div class="col-12">
+        <div class="card mb-4 border-success">
+            <div class="card-header bg-success text-white">Upload Vulnerability Scan</div>
+            <div class="card-body">
+                <p class="card-text">Upload a <code>.nessus</code> XML file to ingest new vulnerability data.</p>
+                <form action="/upload" method="post" enctype="multipart/form-data">
+                    <div class="input-group">
+                        <input class="form-control" type="file" id="scanfile" name="scanfile" required>
+                        <button type="submit" class="btn btn-dark">Upload & Ingest</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
 <div class="row">
     <div class="col-md-12">
         <div class="card mb-4 border-info">

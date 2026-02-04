@@ -55,7 +55,7 @@ type Store interface {
 
 	// Analytics
 	GetAgingStats() (map[string]int, error)
-	GetMTTRStats() (map[string]float64, error)
+	GetMTTRStats(days int) (map[string]float64, error)
 	GetSLACompliance() ([]models.Finding, error)
 	GetGhostHosts(days int) ([]models.Host, error)
 	GetZombieFindings() ([]models.Finding, error)
@@ -77,6 +77,13 @@ type Store interface {
 	GetNewFindings(days int) ([]models.Finding, error)
 	GetTopRiskyHosts(limit int) ([]HostRiskSummary, error)
 	ResolveFinding(findingID uint, note string) error
+
+	// Phase 5 Features
+	GetScanDiff(baseScanID, targetScanID uint) (*models.DiffReport, error)
+	GetFamilyStats(days int) (map[string]int, error)
+
+	// Phase 6: Data Export
+	GetFindingsForExport(hostID uint) ([]models.Finding, error)
 }
 
 type FindingSummary struct {
