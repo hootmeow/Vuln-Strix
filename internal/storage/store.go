@@ -134,6 +134,52 @@ type Store interface {
 	ClearSettings() error
 	ClearSavedFilters() error
 	ClearSearchHistory() error
+
+	// Executive Reporting
+	GetOpenFindingsBySeverity() (map[string]int64, error)
+	GetTopVulnerabilities(limit int) ([]VulnSummary, error)
+	GetFindingsTrendByWeek(weeks int) ([]WeeklyTrend, error)
+	GetRemediationStats(days int) (*RemediationStats, error)
+	GetRiskByGroup() ([]GroupRiskSummary, error)
+}
+
+// VulnSummary represents a vulnerability with count of affected hosts
+type VulnSummary struct {
+	PluginID    int
+	Name        string
+	Severity    string
+	AffectedHosts int
+}
+
+// WeeklyTrend represents weekly new/fixed findings
+type WeeklyTrend struct {
+	WeekStart time.Time
+	WeekEnd   time.Time
+	NewCount  int
+	FixedCount int
+	OpenCount int
+}
+
+// RemediationStats represents remediation performance metrics
+type RemediationStats struct {
+	TotalOpen      int
+	TotalFixed     int
+	FixedThisPeriod int
+	NewThisPeriod  int
+	RemediationRate float64
+	AvgDaysToFix   float64
+}
+
+// GroupRiskSummary represents risk metrics for a business group
+type GroupRiskSummary struct {
+	GroupName     string
+	Color         string
+	HostCount     int
+	CriticalCount int
+	HighCount     int
+	MediumCount   int
+	LowCount      int
+	TotalRisk     int
 }
 
 type FindingSummary struct {

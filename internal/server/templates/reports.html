@@ -1,108 +1,200 @@
 {{define "content"}}
+<style>
+    .kpi-card { background: var(--bs-tertiary-bg); border-radius: 12px; border: 1px solid var(--bs-border-color); transition: transform 0.2s; }
+    .kpi-card:hover { transform: translateY(-2px); }
+    .kpi-value { font-size: 2.5rem; font-weight: 700; line-height: 1; }
+    .kpi-label { text-transform: uppercase; letter-spacing: 0.5px; font-size: 0.75rem; color: var(--bs-secondary-color); font-weight: 600; }
+    .kpi-trend { font-size: 0.85rem; }
+    .section-header { font-size: 1rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--bs-secondary-color); margin-bottom: 1rem; }
+    .severity-bar { height: 8px; border-radius: 4px; }
+    .risk-indicator { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
+    .chart-container { position: relative; height: 250px; }
+    .score-ring { width: 120px; height: 120px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto; position: relative; }
+    .score-ring::before { content: ''; position: absolute; width: 90px; height: 90px; background: var(--bs-body-bg); border-radius: 50%; }
+    .score-value { position: relative; z-index: 1; font-size: 1.75rem; font-weight: 700; }
+    @media print { .no-print, .navbar, .sidebar { display: none !important; } body { background: white !important; } .card { break-inside: avoid; } }
+</style>
+
 <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
-    <h1 class="h2">Advanced Security Reports</h1>
-    <a href="/reports/executive" class="btn btn-primary btn-sm">
-        <span data-feather="file-text" class="me-1"></span>
-        Executive Brief
-    </a>
+    <div>
+        <h1 class="h2">Executive Dashboard</h1>
+        <p class="text-muted mb-0">Security posture overview as of {{.Date}}</p>
+    </div>
+    <div class="no-print">
+        <div class="btn-group btn-group-sm me-2">
+            <a href="?days=7" class="btn btn-outline-secondary {{if eq .Days 7}}active{{end}}">7 Days</a>
+            <a href="?days=30" class="btn btn-outline-secondary {{if eq .Days 30}}active{{end}}">30 Days</a>
+            <a href="?days=90" class="btn btn-outline-secondary {{if eq .Days 90}}active{{end}}">90 Days</a>
+        </div>
+        <a href="/reports/executive" class="btn btn-sm btn-primary me-2">
+            <span data-feather="file-text" class="me-1"></span>Print Brief
+        </a>
+        <button onclick="window.print()" class="btn btn-sm btn-outline-secondary">
+            <span data-feather="printer" class="me-1"></span>Print
+        </button>
+    </div>
 </div>
 
-{{if not .CanCompare}}
-<div class="alert alert-warning d-flex align-items-center">
-    <span data-feather="alert-triangle" class="me-2"></span>
-    {{.Message}}
+<!-- Key Performance Indicators -->
+<div class="row g-3 mb-4">
+    <div class="col-md-3">
+        <div class="kpi-card p-3 text-center h-100">
+            <div class="kpi-label mb-2">Security Posture</div>
+            <div class="score-ring mb-2" style="background: conic-gradient({{if ge .PostureScore 80.0}}#198754{{else if ge .PostureScore 60.0}}#ffc107{{else}}#dc3545{{end}} {{printf "%.0f" .PostureScore}}%, #e9ecef {{printf "%.0f" .PostureScore}}%);">
+                <span class="score-value {{if ge .PostureScore 80.0}}text-success{{else if ge .PostureScore 60.0}}text-warning{{else}}text-danger{{end}}">{{printf "%.0f" .PostureScore}}</span>
+            </div>
+            <small class="text-muted">out of 100</small>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="kpi-card p-3 text-center h-100">
+            <div class="kpi-label mb-2">SLA Compliance</div>
+            <div class="kpi-value {{if ge .SLACompliance 90.0}}text-success{{else if ge .SLACompliance 70.0}}text-warning{{else}}text-danger{{end}}">{{printf "%.0f" .SLACompliance}}%</div>
+            <div class="kpi-trend text-muted mt-2">
+                <span data-feather="alert-circle" style="width:14px;height:14px;" class="me-1"></span>
+                {{len .SLABreaches}} breaches
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="kpi-card p-3 text-center h-100">
+            <div class="kpi-label mb-2">MTTR (Critical)</div>
+            <div class="kpi-value text-primary">{{if .MTTR.Critical}}{{printf "%.1f" .MTTR.Critical}}{{else}}--{{end}}</div>
+            <div class="kpi-trend text-muted mt-2">days to remediate</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="kpi-card p-3 text-center h-100">
+            <div class="kpi-label mb-2">Remediation Rate</div>
+            {{if .RemediationStats}}
+            <div class="kpi-value {{if ge .RemediationStats.RemediationRate 50.0}}text-success{{else}}text-warning{{end}}">{{printf "%.0f" .RemediationStats.RemediationRate}}%</div>
+            <div class="kpi-trend mt-2">
+                <span class="text-success">-{{.RemediationStats.FixedThisPeriod}}</span> /
+                <span class="text-danger">+{{.RemediationStats.NewThisPeriod}}</span>
+            </div>
+            {{else}}
+            <div class="kpi-value text-muted">--</div>
+            {{end}}
+        </div>
+    </div>
 </div>
-{{else}}
-<div class="row g-4">
-    <!-- Vulnerability Aging -->
-    <div class="col-lg-6">
+
+<!-- Severity Breakdown & Trend -->
+<div class="row g-4 mb-4">
+    <div class="col-lg-4">
         <div class="card h-100">
             <div class="card-header">
-                <span data-feather="clock" class="me-2"></span>
-                Vulnerability Aging Breakdown
+                <span data-feather="pie-chart" class="me-2"></span>
+                Open Vulnerabilities by Severity
             </div>
             <div class="card-body">
-                <p class="text-muted small">Distribution of open vulnerabilities by their age since discovery.</p>
-                <div class="list-group list-group-flush">
-                    {{range $bucket, $count := .Aging}}
-                    <div class="list-group-item d-flex justify-content-between align-items-center">
-                        {{$bucket}}
-                        <span class="badge {{if eq $bucket " 91+ Days"}}bg-danger{{else if eq $bucket "61-90 Days"
-                            }}bg-warning text-dark{{else}}bg-secondary{{end}} rounded-pill">{{$count}}</span>
+                <div class="row text-center mb-3">
+                    <div class="col">
+                        <div class="display-6 text-danger fw-bold">{{if .SeverityCounts.Critical}}{{.SeverityCounts.Critical}}{{else}}0{{end}}</div>
+                        <small class="text-muted">Critical</small>
                     </div>
-                    {{end}}
+                    <div class="col">
+                        <div class="display-6 text-warning fw-bold">{{if .SeverityCounts.High}}{{.SeverityCounts.High}}{{else}}0{{end}}</div>
+                        <small class="text-muted">High</small>
+                    </div>
+                    <div class="col">
+                        <div class="display-6 text-info fw-bold">{{if .SeverityCounts.Medium}}{{.SeverityCounts.Medium}}{{else}}0{{end}}</div>
+                        <small class="text-muted">Medium</small>
+                    </div>
+                    <div class="col">
+                        <div class="display-6 text-secondary fw-bold">{{if .SeverityCounts.Low}}{{.SeverityCounts.Low}}{{else}}0{{end}}</div>
+                        <small class="text-muted">Low</small>
+                    </div>
+                </div>
+                <div class="chart-container" style="height: 180px;">
+                    <canvas id="severityChart"></canvas>
                 </div>
             </div>
         </div>
     </div>
-
-    <!-- Remediation Performance (MTTR) -->
-    <div class="col-lg-6">
+    <div class="col-lg-8">
         <div class="card h-100">
             <div class="card-header">
-                <span data-feather="trending-down" class="me-2"></span>
-                Remediation Performance (MTTR)
+                <span data-feather="trending-up" class="me-2"></span>
+                Vulnerability Trend (12 Weeks)
             </div>
             <div class="card-body">
-                <p class="text-muted small">Average days to fix vulnerabilities (discovery to resolution).</p>
-                <table class="table table-sm mt-2">
-                    <thead>
-                        <tr>
-                            <th>Severity</th>
-                            <th>Avg. Days to Fix</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {{range $sev, $days := .MTTR}}
-                        <tr>
-                            <td><span class="severity-badge severity-{{$sev}}">{{$sev}}</span></td>
-                            <td class="fw-bold">{{printf "%.1f" $days}} days</td>
-                        </tr>
-                        {{end}}
-                    </tbody>
-                </table>
+                <div class="chart-container">
+                    <canvas id="trendChart"></canvas>
+                </div>
             </div>
         </div>
     </div>
 </div>
 
-<div class="row g-4 mt-2">
-    <!-- SLA Compliance -->
-    <div class="col-12">
-        <div class="card">
-            <div class="card-header d-flex justify-content-between align-items-center">
-                <span class="text-danger">
-                    <span data-feather="alert-circle" class="me-2"></span>
-                    SLA Compliance Tracking
-                </span>
-                <span class="badge bg-danger rounded-pill">{{len .SLABreaches}} Items Outside SLA</span>
+<!-- Risk by Group & Top Vulnerabilities -->
+<div class="row g-4 mb-4">
+    {{if .GroupRisk}}
+    <div class="col-lg-6">
+        <div class="card h-100">
+            <div class="card-header">
+                <span data-feather="folder" class="me-2"></span>
+                Risk by Business Unit
             </div>
             <div class="card-body p-0">
                 <div class="table-responsive">
                     <table class="table table-hover mb-0">
                         <thead class="table-light">
                             <tr>
-                                <th>Host</th>
-                                <th>Vulnerability</th>
-                                <th>Severity</th>
-                                <th>First Seen</th>
-                                <th>Status</th>
+                                <th>Group</th>
+                                <th class="text-center">Hosts</th>
+                                <th class="text-center">Critical</th>
+                                <th class="text-center">High</th>
+                                <th class="text-end">Risk Score</th>
                             </tr>
                         </thead>
                         <tbody>
-                            {{range .SLABreaches}}
-                            <tr class="stagger-item">
-                                <td>{{.Host.IP}}</td>
-                                <td class="text-truncate" style="max-width: 300px;">{{.Vuln.Name}}</td>
-                                <td><span class="severity-badge severity-{{.Vuln.Severity}}">{{.Vuln.Severity}}</span></td>
-                                <td>{{.FirstSeen.Format "2006-01-02"}}</td>
-                                <td><span class="badge bg-danger">STALE</span></td>
+                            {{range .GroupRisk}}
+                            <tr>
+                                <td>
+                                    <span class="risk-indicator me-2" style="background-color: {{if .Color}}{{.Color}}{{else}}#6c757d{{end}};"></span>
+                                    {{.GroupName}}
+                                </td>
+                                <td class="text-center">{{.HostCount}}</td>
+                                <td class="text-center"><span class="badge bg-danger">{{.CriticalCount}}</span></td>
+                                <td class="text-center"><span class="badge bg-warning text-dark">{{.HighCount}}</span></td>
+                                <td class="text-end fw-bold">{{.TotalRisk}}</td>
+                            </tr>
+                            {{end}}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+    {{end}}
+    <div class="{{if .GroupRisk}}col-lg-6{{else}}col-12{{end}}">
+        <div class="card h-100">
+            <div class="card-header">
+                <span data-feather="alert-triangle" class="me-2"></span>
+                Top 10 Most Common Vulnerabilities
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Vulnerability</th>
+                                <th class="text-center">Severity</th>
+                                <th class="text-end">Affected Hosts</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {{range .TopVulns}}
+                            <tr>
+                                <td class="text-truncate" style="max-width: 300px;" title="{{.Name}}">{{.Name}}</td>
+                                <td class="text-center">
+                                    <span class="badge {{if eq .Severity "Critical"}}bg-danger{{else if eq .Severity "High"}}bg-warning text-dark{{else if eq .Severity "Medium"}}bg-info{{else}}bg-secondary{{end}}">{{.Severity}}</span>
+                                </td>
+                                <td class="text-end fw-bold">{{.AffectedHosts}}</td>
                             </tr>
                             {{else}}
-                            <tr>
-                                <td colspan="5" class="text-center py-4 text-muted italic">All vulnerabilities are
-                                    currently within SLA windows.</td>
-                            </tr>
+                            <tr><td colspan="3" class="text-center text-muted py-3">No open vulnerabilities</td></tr>
                             {{end}}
                         </tbody>
                     </table>
@@ -112,44 +204,285 @@
     </div>
 </div>
 
-<div class="row g-4 mt-2">
-    <!-- Global Scan Delta -->
-    <div class="col-12">
-        <div class="card">
+<!-- Top Risky Hosts & MTTR by Severity -->
+<div class="row g-4 mb-4">
+    <div class="col-lg-6">
+        <div class="card h-100">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span>
+                    <span data-feather="server" class="me-2"></span>
+                    Top 10 Riskiest Assets
+                </span>
+                <span class="badge bg-dark">{{.HostCount}} total hosts</span>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Host</th>
+                                <th class="text-center">Risk Score</th>
+                                <th class="text-center">Critical</th>
+                                <th class="text-center">High</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {{range .TopRiskyHosts}}
+                            <tr>
+                                <td>
+                                    <a href="/hosts/{{.HostID}}" class="text-decoration-none">
+                                        <strong>{{.Hostname}}</strong>
+                                        <br><small class="text-muted">{{.IP}}</small>
+                                    </a>
+                                </td>
+                                <td class="text-center"><span class="badge bg-dark">{{.RiskScore}}</span></td>
+                                <td class="text-center"><span class="badge bg-danger">{{.CriticalCount}}</span></td>
+                                <td class="text-center"><span class="badge bg-warning text-dark">{{.HighCount}}</span></td>
+                            </tr>
+                            {{else}}
+                            <tr><td colspan="4" class="text-center text-muted py-3">No data</td></tr>
+                            {{end}}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-6">
+        <div class="card h-100">
             <div class="card-header">
-                <span data-feather="git-pull-request" class="me-2"></span>
-                Global Scan Delta
+                <span data-feather="clock" class="me-2"></span>
+                Mean Time to Remediate (MTTR)
             </div>
             <div class="card-body">
-                <div class="row text-center">
-                    <div class="col-md-3 border-end">
-                        <small class="text-muted d-block uppercase small">Latest Scan</small>
-                        <h4 class="mb-0">{{.Latest.Name}}</h4>
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="chart-container" style="height: 200px;">
+                            <canvas id="mttrChart"></canvas>
+                        </div>
                     </div>
-                    <div class="col-md-3 border-end">
-                        <small class="text-muted d-block uppercase small">Critical Change</small>
-                        {{$diff := sub .Latest.CriticalCount .Previous.CriticalCount}}
-                        <h4
-                            class="{{if gt $diff 0}}text-danger{{else if lt $diff 0}}text-success{{else}}text-muted{{end}} mb-0">
-                            {{if gt $diff 0}}+{{end}}{{$diff}}
-                        </h4>
-                    </div>
-                    <div class="col-md-3 border-end">
-                        <small class="text-muted d-block uppercase small">High Change</small>
-                        {{$diffH := sub .Latest.HighCount .Previous.HighCount}}
-                        <h4
-                            class="{{if gt $diffH 0}}text-danger{{else if lt $diffH 0}}text-success{{else}}text-muted{{end}} mb-0">
-                            {{if gt $diffH 0}}+{{end}}{{$diffH}}
-                        </h4>
-                    </div>
-                    <div class="col-md-3">
-                        <small class="text-muted d-block uppercase small">Previous Scan</small>
-                        <h4 class="mb-0">{{.Previous.Name}}</h4>
+                    <div class="col-md-6">
+                        <table class="table table-sm">
+                            <thead>
+                                <tr><th>Severity</th><th class="text-end">Avg Days</th></tr>
+                            </thead>
+                            <tbody>
+                                {{range $sev, $days := .MTTR}}
+                                <tr>
+                                    <td><span class="badge {{if eq $sev "Critical"}}bg-danger{{else if eq $sev "High"}}bg-warning text-dark{{else if eq $sev "Medium"}}bg-info{{else}}bg-secondary{{end}}">{{$sev}}</span></td>
+                                    <td class="text-end fw-bold">{{printf "%.1f" $days}}</td>
+                                </tr>
+                                {{end}}
+                            </tbody>
+                        </table>
+                        <div class="alert alert-light border mt-3 mb-0">
+                            <small>
+                                <span data-feather="info" class="me-1" style="width:14px;height:14px;"></span>
+                                Lower MTTR indicates faster remediation. Industry benchmark for Critical is &lt;7 days.
+                            </small>
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
     </div>
 </div>
+
+<!-- Aging & SLA Breaches -->
+<div class="row g-4 mb-4">
+    <div class="col-lg-4">
+        <div class="card h-100">
+            <div class="card-header">
+                <span data-feather="calendar" class="me-2"></span>
+                Vulnerability Age Distribution
+            </div>
+            <div class="card-body">
+                {{range $bucket, $count := .Aging}}
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <span>{{$bucket}}</span>
+                    <span class="badge {{if eq $bucket "91+ Days"}}bg-danger{{else if eq $bucket "61-90 Days"}}bg-warning text-dark{{else if eq $bucket "31-60 Days"}}bg-info{{else}}bg-success{{end}} rounded-pill">{{$count}}</span>
+                </div>
+                {{end}}
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-8">
+        <div class="card h-100">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span class="text-danger">
+                    <span data-feather="alert-octagon" class="me-2"></span>
+                    SLA Breaches Requiring Attention
+                </span>
+                <span class="badge bg-danger rounded-pill">{{len .SLABreaches}}</span>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive" style="max-height: 300px; overflow-y: auto;">
+                    <table class="table table-hover mb-0">
+                        <thead class="table-light sticky-top">
+                            <tr>
+                                <th>Host</th>
+                                <th>Vulnerability</th>
+                                <th class="text-center">Severity</th>
+                                <th class="text-center">Age (Days)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {{range .SLABreaches}}
+                            <tr>
+                                <td><a href="/hosts/{{.HostID}}">{{.Host.IP}}</a></td>
+                                <td class="text-truncate" style="max-width: 250px;" title="{{.Vuln.Name}}">{{.Vuln.Name}}</td>
+                                <td class="text-center">
+                                    <span class="badge {{if eq .Vuln.Severity "Critical"}}bg-danger{{else if eq .Vuln.Severity "High"}}bg-warning text-dark{{else}}bg-info{{end}}">{{.Vuln.Severity}}</span>
+                                </td>
+                                <td class="text-center fw-bold text-danger">{{.AgeDays}}</td>
+                            </tr>
+                            {{else}}
+                            <tr><td colspan="4" class="text-center text-success py-4">All vulnerabilities within SLA</td></tr>
+                            {{end}}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Hidden data for charts -->
+<div id="chartData" style="display:none;"
+    data-critical="{{if .SeverityCounts.Critical}}{{.SeverityCounts.Critical}}{{else}}0{{end}}"
+    data-high="{{if .SeverityCounts.High}}{{.SeverityCounts.High}}{{else}}0{{end}}"
+    data-medium="{{if .SeverityCounts.Medium}}{{.SeverityCounts.Medium}}{{else}}0{{end}}"
+    data-low="{{if .SeverityCounts.Low}}{{.SeverityCounts.Low}}{{else}}0{{end}}"
+    data-mttr-critical="{{if .MTTR.Critical}}{{printf "%.1f" .MTTR.Critical}}{{else}}0{{end}}"
+    data-mttr-high="{{if .MTTR.High}}{{printf "%.1f" .MTTR.High}}{{else}}0{{end}}"
+    data-mttr-medium="{{if .MTTR.Medium}}{{printf "%.1f" .MTTR.Medium}}{{else}}0{{end}}"
+    data-mttr-low="{{if .MTTR.Low}}{{printf "%.1f" .MTTR.Low}}{{else}}0{{end}}">
+    <ul id="trendData">
+        {{range .WeeklyTrend}}
+        <li data-week="{{.WeekEnd.Format "Jan 2"}}" data-new="{{.NewCount}}" data-fixed="{{.FixedCount}}" data-open="{{.OpenCount}}"></li>
+        {{end}}
+    </ul>
+</div>
 {{end}}
+
+{{define "scripts"}}
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    feather.replace();
+
+    const isDark = document.documentElement.getAttribute('data-bs-theme') === 'dark';
+    const textColor = isDark ? '#adb5bd' : '#6c757d';
+    const gridColor = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)';
+
+    const chartData = document.getElementById('chartData');
+
+    // Severity Doughnut Chart
+    const sevCtx = document.getElementById('severityChart');
+    if (sevCtx) {
+        new Chart(sevCtx, {
+            type: 'doughnut',
+            data: {
+                labels: ['Critical', 'High', 'Medium', 'Low'],
+                datasets: [{
+                    data: [
+                        parseInt(chartData.dataset.critical),
+                        parseInt(chartData.dataset.high),
+                        parseInt(chartData.dataset.medium),
+                        parseInt(chartData.dataset.low)
+                    ],
+                    backgroundColor: ['#dc3545', '#fd7e14', '#0dcaf0', '#6c757d'],
+                    borderWidth: 0
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                cutout: '60%',
+                plugins: {
+                    legend: { display: false }
+                }
+            }
+        });
+    }
+
+    // Trend Line Chart
+    const trendCtx = document.getElementById('trendChart');
+    if (trendCtx) {
+        const trendItems = document.querySelectorAll('#trendData li');
+        const weeks = [], newCounts = [], fixedCounts = [], openCounts = [];
+        trendItems.forEach(li => {
+            weeks.push(li.dataset.week);
+            newCounts.push(parseInt(li.dataset.new));
+            fixedCounts.push(parseInt(li.dataset.fixed));
+            openCounts.push(parseInt(li.dataset.open));
+        });
+
+        new Chart(trendCtx, {
+            type: 'line',
+            data: {
+                labels: weeks,
+                datasets: [
+                    {
+                        label: 'New',
+                        data: newCounts,
+                        borderColor: '#dc3545',
+                        backgroundColor: 'rgba(220,53,69,0.1)',
+                        fill: true,
+                        tension: 0.3
+                    },
+                    {
+                        label: 'Fixed',
+                        data: fixedCounts,
+                        borderColor: '#198754',
+                        backgroundColor: 'rgba(25,135,84,0.1)',
+                        fill: true,
+                        tension: 0.3
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { position: 'top', labels: { color: textColor } }
+                },
+                scales: {
+                    x: { grid: { color: gridColor }, ticks: { color: textColor } },
+                    y: { beginAtZero: true, grid: { color: gridColor }, ticks: { color: textColor } }
+                }
+            }
+        });
+    }
+
+    // MTTR Bar Chart
+    const mttrCtx = document.getElementById('mttrChart');
+    if (mttrCtx) {
+        new Chart(mttrCtx, {
+            type: 'bar',
+            data: {
+                labels: ['Critical', 'High', 'Medium', 'Low'],
+                datasets: [{
+                    label: 'Days',
+                    data: [
+                        parseFloat(chartData.dataset.mttrCritical),
+                        parseFloat(chartData.dataset.mttrHigh),
+                        parseFloat(chartData.dataset.mttrMedium),
+                        parseFloat(chartData.dataset.mttrLow)
+                    ],
+                    backgroundColor: ['#dc3545', '#fd7e14', '#0dcaf0', '#6c757d']
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                    x: { grid: { display: false }, ticks: { color: textColor } },
+                    y: { beginAtZero: true, grid: { color: gridColor }, ticks: { color: textColor } }
+                }
+            }
+        });
+    }
+});
+</script>
 {{end}}

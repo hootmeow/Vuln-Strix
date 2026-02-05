@@ -325,6 +325,17 @@ func (s *Server) handleHostDetails(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Filter out Info severity findings if setting is enabled
+	if s.hideInfoEnabled() {
+		filtered := make([]models.Finding, 0, len(findings))
+		for _, f := range findings {
+			if f.Vuln.Severity != "Info" {
+				filtered = append(filtered, f)
+			}
+		}
+		findings = filtered
+	}
+
 	// Get available groups for assignment dropdown
 	groups, _ := s.store.GetTagsByCategory("")
 
@@ -352,6 +363,17 @@ func (s *Server) handleVulns(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Error(w, "Database error", http.StatusInternalServerError)
 		return
+	}
+
+	// Filter out Info severity if setting is enabled
+	if s.hideInfoEnabled() {
+		filtered := make([]models.Vulnerability, 0, len(vulns))
+		for _, v := range vulns {
+			if v.Severity != "Info" {
+				filtered = append(filtered, v)
+			}
+		}
+		vulns = filtered
 	}
 
 	// Group by Family
@@ -462,14 +484,17 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
 	sla := s.store.GetSLAConfig()
 	settings, _ := s.store.GetSettings()
 	complianceEnabled := settings["compliance_enabled"] == "true"
+	hideInfoSeverity := settings["hide_info_severity"] == "true"
 
 	data := struct {
 		SLA               map[string]int
 		ComplianceEnabled bool
+		HideInfoSeverity  bool
 		Breadcrumbs       []Breadcrumb
 	}{
 		SLA:               sla,
 		ComplianceEnabled: complianceEnabled,
+		HideInfoSeverity:  hideInfoSeverity,
 		Breadcrumbs: []Breadcrumb{
 			{Text: "Home", URL: "/"},
 			{Text: "Admin", URL: "/admin", Active: true},
@@ -499,6 +524,11 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 	complianceEnabled := r.FormValue("compliance_enabled") == "true"
 	if err := s.store.UpdateSetting("compliance_enabled", fmt.Sprintf("%v", complianceEnabled)); err != nil {
 		log.Printf("Failed to update compliance_enabled: %v", err)
+	}
+
+	hideInfoSeverity := r.FormValue("hide_info_severity") == "true"
+	if err := s.store.UpdateSetting("hide_info_severity", fmt.Sprintf("%v", hideInfoSeverity)); err != nil {
+		log.Printf("Failed to update hide_info_severity: %v", err)
 	}
 
 	http.Redirect(w, r, "/admin?status=settings_saved", http.StatusSeeOther)
@@ -620,52 +650,92 @@ func (s *Server) handleGenerateData(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleReports(w http.ResponseWriter, r *http.Request) {
-	// For advanced reporting, we want to calculate:
-	// 1. Total findings over time (already on dashboard, but maybe more granular)
-	// 2. Scan Delta: Comparing the last two scans globally
-
-	scans, err := s.store.GetScans()
-	if err != nil || len(scans) < 2 {
-		data := struct {
-			CanCompare  bool
-			Message     string
-			Breadcrumbs []Breadcrumb
-		}{
-			CanCompare: false,
-			Message:    "At least two scans are required for comparison reports.",
-			Breadcrumbs: []Breadcrumb{
-				{Text: "Home", URL: "/"},
-				{Text: "Reports", URL: "/reports", Active: true},
-			},
-		}
-		s.render(w, "reports.html", data)
-		return
+	// Parse time period (default 30 days)
+	daysStr := r.URL.Query().Get("days")
+	days := 30
+	if daysStr != "" {
+		fmt.Sscanf(daysStr, "%d", &days)
 	}
 
-	// Simple Delta calculation between latest and previous
-	latest := scans[0]
-	prev := scans[1]
-
-	aging, _ := s.store.GetAgingStats()
-	mttr, _ := s.store.GetMTTRStats(90)
+	// Gather comprehensive metrics
+	hostCount, _ := s.store.GetHostCount()
+	severityCounts, _ := s.store.GetOpenFindingsBySeverity()
+	topVulns, _ := s.store.GetTopVulnerabilities(10)
+	weeklyTrend, _ := s.store.GetFindingsTrendByWeek(12)
+	remediationStats, _ := s.store.GetRemediationStats(days)
+	groupRisk, _ := s.store.GetRiskByGroup()
+	mttr, _ := s.store.GetMTTRStats(days)
 	slaBreaches, _ := s.store.GetSLACompliance()
+	topRisky, _ := s.store.GetTopRiskyHosts(10)
+	aging, _ := s.store.GetAgingStats()
+
+	// Calculate security posture score (0-100)
+	totalOpen := severityCounts["Critical"]*10 + severityCounts["High"]*5 + severityCounts["Medium"]*2 + severityCounts["Low"]
+	var postureScore float64 = 100
+	if hostCount > 0 {
+		riskPerHost := float64(totalOpen) / float64(hostCount)
+		postureScore = 100 - (riskPerHost * 2) // Deduct 2 points per risk unit per host
+		if postureScore < 0 {
+			postureScore = 0
+		}
+	}
+
+	// Calculate SLA compliance percentage
+	slaCompliance := 100.0
+	if hostCount > 0 {
+		uniqueBreachHosts := make(map[uint]bool)
+		for _, b := range slaBreaches {
+			uniqueBreachHosts[b.HostID] = true
+		}
+		slaCompliance = 100.0 * (1.0 - float64(len(uniqueBreachHosts))/float64(hostCount))
+	}
+
+	// Filter out Info severity if enabled
+	hideInfo := s.hideInfoEnabled()
+	if hideInfo {
+		delete(severityCounts, "Info")
+		filtered := make([]storage.VulnSummary, 0)
+		for _, v := range topVulns {
+			if v.Severity != "Info" {
+				filtered = append(filtered, v)
+			}
+		}
+		topVulns = filtered
+	}
 
 	data := struct {
-		CanCompare  bool
-		Latest      models.Scan
-		Previous    models.Scan
-		Aging       map[string]int
-		MTTR        map[string]float64
-		SLABreaches []models.Finding
-		Message     string
-		Breadcrumbs []Breadcrumb
+		Days             int
+		Date             string
+		HostCount        int64
+		SeverityCounts   map[string]int64
+		TopVulns         []storage.VulnSummary
+		WeeklyTrend      []storage.WeeklyTrend
+		RemediationStats *storage.RemediationStats
+		GroupRisk        []storage.GroupRiskSummary
+		MTTR             map[string]float64
+		SLABreaches      []models.Finding
+		TopRiskyHosts    []storage.HostRiskSummary
+		Aging            map[string]int
+		PostureScore     float64
+		SLACompliance    float64
+		HideInfo         bool
+		Breadcrumbs      []Breadcrumb
 	}{
-		CanCompare:  true,
-		Latest:      latest,
-		Previous:    prev,
-		Aging:       aging,
-		MTTR:        mttr,
-		SLABreaches: slaBreaches,
+		Days:             days,
+		Date:             time.Now().Format("Jan 02, 2006"),
+		HostCount:        hostCount,
+		SeverityCounts:   severityCounts,
+		TopVulns:         topVulns,
+		WeeklyTrend:      weeklyTrend,
+		RemediationStats: remediationStats,
+		GroupRisk:        groupRisk,
+		MTTR:             mttr,
+		SLABreaches:      slaBreaches,
+		TopRiskyHosts:    topRisky,
+		Aging:            aging,
+		PostureScore:     postureScore,
+		SLACompliance:    slaCompliance,
+		HideInfo:         hideInfo,
 		Breadcrumbs: []Breadcrumb{
 			{Text: "Home", URL: "/"},
 			{Text: "Reports", URL: "/reports", Active: true},
@@ -1255,6 +1325,17 @@ func (s *Server) handleGroupDetails(w http.ResponseWriter, r *http.Request) {
 		log.Printf("Error fetching findings for group %s: %v", name, err)
 	}
 
+	// Filter out Info severity findings if setting is enabled
+	if s.hideInfoEnabled() {
+		filtered := make([]models.Finding, 0, len(findings))
+		for _, f := range findings {
+			if f.Vuln.Severity != "Info" {
+				filtered = append(filtered, f)
+			}
+		}
+		findings = filtered
+	}
+
 	// Get the tag info
 	tags, _ := s.store.GetTagsByCategory("")
 	var groupTag models.Tag
@@ -1572,6 +1653,17 @@ func (s *Server) handleSearchAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Filter out Info severity results if setting is enabled
+	if s.hideInfoEnabled() {
+		filtered := make([]storage.SearchResult, 0, len(results))
+		for _, r := range results {
+			if r.Severity != "Info" {
+				filtered = append(filtered, r)
+			}
+		}
+		results = filtered
+	}
+
 	// Record search history
 	userID := "anonymous"
 	if u := s.getCurrentUser(r); u != nil {
@@ -1725,10 +1817,17 @@ func (s *Server) handleMTTRAPI(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleGetFeatureSettings(w http.ResponseWriter, r *http.Request) {
 	settings, _ := s.store.GetSettings()
 	features := map[string]bool{
-		"compliance_enabled": settings["compliance_enabled"] == "true",
+		"compliance_enabled":  settings["compliance_enabled"] == "true",
+		"hide_info_severity": settings["hide_info_severity"] == "true",
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(features)
+}
+
+// hideInfoEnabled returns true if Info severity should be hidden
+func (s *Server) hideInfoEnabled() bool {
+	settings, _ := s.store.GetSettings()
+	return settings["hide_info_severity"] == "true"
 }
 
 func (s *Server) handlePredictAPI(w http.ResponseWriter, r *http.Request) {

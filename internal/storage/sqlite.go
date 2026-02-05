@@ -455,6 +455,199 @@ func (s *SQLiteStore) ClearSearchHistory() error {
 	return s.db.Exec("DELETE FROM search_histories").Error
 }
 
+// GetOpenFindingsBySeverity returns count of open findings by severity
+func (s *SQLiteStore) GetOpenFindingsBySeverity() (map[string]int64, error) {
+	result := make(map[string]int64)
+
+	var counts []struct {
+		Severity string
+		Count    int64
+	}
+
+	err := s.db.Model(&models.Finding{}).
+		Select("vulnerabilities.severity as severity, COUNT(*) as count").
+		Joins("JOIN vulnerabilities ON findings.vulnerability_id = vulnerabilities.id").
+		Where("findings.status = ?", "Open").
+		Group("vulnerabilities.severity").
+		Scan(&counts).Error
+
+	if err != nil {
+		return nil, err
+	}
+
+	for _, c := range counts {
+		result[c.Severity] = c.Count
+	}
+
+	return result, nil
+}
+
+// GetTopVulnerabilities returns the most common open vulnerabilities
+func (s *SQLiteStore) GetTopVulnerabilities(limit int) ([]VulnSummary, error) {
+	var results []VulnSummary
+
+	err := s.db.Model(&models.Finding{}).
+		Select("vulnerabilities.plugin_id, vulnerabilities.name, vulnerabilities.severity, COUNT(DISTINCT findings.host_id) as affected_hosts").
+		Joins("JOIN vulnerabilities ON findings.vulnerability_id = vulnerabilities.id").
+		Where("findings.status = ?", "Open").
+		Group("vulnerabilities.id").
+		Order("affected_hosts DESC, CASE vulnerabilities.severity WHEN 'Critical' THEN 1 WHEN 'High' THEN 2 WHEN 'Medium' THEN 3 WHEN 'Low' THEN 4 ELSE 5 END").
+		Limit(limit).
+		Scan(&results).Error
+
+	return results, err
+}
+
+// GetFindingsTrendByWeek returns weekly new/fixed/open counts
+func (s *SQLiteStore) GetFindingsTrendByWeek(weeks int) ([]WeeklyTrend, error) {
+	var trends []WeeklyTrend
+
+	now := time.Now()
+	for i := weeks - 1; i >= 0; i-- {
+		weekEnd := now.AddDate(0, 0, -7*i)
+		weekStart := weekEnd.AddDate(0, 0, -7)
+
+		var newCount, fixedCount, openCount int64
+
+		// New findings this week
+		s.db.Model(&models.Finding{}).
+			Where("first_seen >= ? AND first_seen < ?", weekStart, weekEnd).
+			Count(&newCount)
+
+		// Fixed findings this week
+		s.db.Model(&models.Finding{}).
+			Where("status = ? AND updated_at >= ? AND updated_at < ?", "Fixed", weekStart, weekEnd).
+			Count(&fixedCount)
+
+		// Open findings at end of week (approximate)
+		s.db.Model(&models.Finding{}).
+			Where("first_seen < ? AND (status = 'Open' OR (status = 'Fixed' AND updated_at > ?))", weekEnd, weekEnd).
+			Count(&openCount)
+
+		trends = append(trends, WeeklyTrend{
+			WeekStart:  weekStart,
+			WeekEnd:    weekEnd,
+			NewCount:   int(newCount),
+			FixedCount: int(fixedCount),
+			OpenCount:  int(openCount),
+		})
+	}
+
+	return trends, nil
+}
+
+// GetRemediationStats returns remediation performance metrics
+func (s *SQLiteStore) GetRemediationStats(days int) (*RemediationStats, error) {
+	stats := &RemediationStats{}
+	cutoff := time.Now().AddDate(0, 0, -days)
+
+	var totalOpen, totalFixed, fixedThisPeriod, newThisPeriod int64
+
+	// Total open
+	s.db.Model(&models.Finding{}).Where("status = ?", "Open").Count(&totalOpen)
+	stats.TotalOpen = int(totalOpen)
+
+	// Total fixed
+	s.db.Model(&models.Finding{}).Where("status = ?", "Fixed").Count(&totalFixed)
+	stats.TotalFixed = int(totalFixed)
+
+	// Fixed this period
+	s.db.Model(&models.Finding{}).
+		Where("status = ? AND updated_at >= ?", "Fixed", cutoff).
+		Count(&fixedThisPeriod)
+	stats.FixedThisPeriod = int(fixedThisPeriod)
+
+	// New this period
+	s.db.Model(&models.Finding{}).
+		Where("first_seen >= ?", cutoff).
+		Count(&newThisPeriod)
+	stats.NewThisPeriod = int(newThisPeriod)
+
+	// Remediation rate
+	total := stats.TotalOpen + stats.TotalFixed
+	if total > 0 {
+		stats.RemediationRate = float64(stats.TotalFixed) / float64(total) * 100
+	}
+
+	// Average days to fix (for fixed findings)
+	var avgDays float64
+	s.db.Model(&models.Finding{}).
+		Select("AVG(julianday(updated_at) - julianday(first_seen))").
+		Where("status = ?", "Fixed").
+		Scan(&avgDays)
+	stats.AvgDaysToFix = avgDays
+
+	return stats, nil
+}
+
+// GetRiskByGroup returns risk summary for each business group
+func (s *SQLiteStore) GetRiskByGroup() ([]GroupRiskSummary, error) {
+	var results []GroupRiskSummary
+
+	// Get all groups (tags with category)
+	var tags []models.Tag
+	if err := s.db.Where("category IN ?", []string{"BusinessUnit", "Environment", "Network"}).Find(&tags).Error; err != nil {
+		return nil, err
+	}
+
+	for _, tag := range tags {
+		summary := GroupRiskSummary{
+			GroupName: tag.Name,
+			Color:     tag.Color,
+		}
+
+		// Get hosts with this tag
+		var hostIDs []uint
+		s.db.Model(&models.Host{}).
+			Select("hosts.id").
+			Joins("JOIN host_tags ON hosts.id = host_tags.host_id").
+			Where("host_tags.tag_id = ?", tag.ID).
+			Pluck("hosts.id", &hostIDs)
+
+		summary.HostCount = len(hostIDs)
+
+		if len(hostIDs) > 0 {
+			// Count findings by severity
+			var counts []struct {
+				Severity string
+				Count    int
+			}
+			s.db.Model(&models.Finding{}).
+				Select("vulnerabilities.severity, COUNT(*) as count").
+				Joins("JOIN vulnerabilities ON findings.vulnerability_id = vulnerabilities.id").
+				Where("findings.host_id IN ? AND findings.status = ?", hostIDs, "Open").
+				Group("vulnerabilities.severity").
+				Scan(&counts)
+
+			for _, c := range counts {
+				switch c.Severity {
+				case "Critical":
+					summary.CriticalCount = c.Count
+					summary.TotalRisk += c.Count * 10
+				case "High":
+					summary.HighCount = c.Count
+					summary.TotalRisk += c.Count * 5
+				case "Medium":
+					summary.MediumCount = c.Count
+					summary.TotalRisk += c.Count * 2
+				case "Low":
+					summary.LowCount = c.Count
+					summary.TotalRisk += c.Count
+				}
+			}
+		}
+
+		results = append(results, summary)
+	}
+
+	// Sort by total risk descending
+	sort.Slice(results, func(i, j int) bool {
+		return results[i].TotalRisk > results[j].TotalRisk
+	})
+
+	return results, nil
+}
+
 func (s *SQLiteStore) GetGhostHosts(days int) ([]models.Host, error) {
 	var hosts []models.Host
 	cutoff := time.Now().AddDate(0, 0, -days)

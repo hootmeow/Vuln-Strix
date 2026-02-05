@@ -110,6 +110,13 @@
                             <br><small class="text-muted">Enable PCI-DSS, HIPAA, NIST, CIS compliance tracking</small>
                         </label>
                     </div>
+                    <div class="form-check form-switch mb-3">
+                        <input class="form-check-input" type="checkbox" id="hide_info_severity" name="hide_info_severity" value="true" {{if .HideInfoSeverity}}checked{{end}}>
+                        <label class="form-check-label" for="hide_info_severity">
+                            <strong>Hide Info Severity</strong>
+                            <br><small class="text-muted">Hide informational findings to reduce noise and focus on actionable vulnerabilities</small>
+                        </label>
+                    </div>
                     <button type="submit" class="btn btn-secondary">Save Features</button>
                 </form>
             </div>

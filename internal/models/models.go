@@ -106,6 +106,11 @@ type Finding struct {
 	ResolutionNote string `json:"resolution_note"`
 }
 
+// AgeDays returns the number of days since the finding was first seen
+func (f Finding) AgeDays() int {
+	return int(time.Since(f.FirstSeen).Hours() / 24)
+}
+
 // DiffReport represents the comparison between two scans or timeframes.
 type DiffReport struct {
 	BaseScanID   uint      `json:"base_scan_id"`
